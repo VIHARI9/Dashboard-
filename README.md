@@ -1,17 +1,5 @@
 # Solar Cell Manufacturing Dashboard
-with r4c2:
-    st.markdown("#### Rejection Trend (MW / Nos)")
-    rej_cols = [c for c in ("er", "fo_r", "er_q") if d_nos is not None and c in d_nos.columns]
-    if d_nos is not None and not d_nos.empty and rej_cols:
-        fig = go.Figure()
-        colors = {"er": "#ef4444", "fo_r": "#f97316", "er_q": "#a855f7"}
-        names = {"er": "ER", "fo_r": "FOR", "er_q": "ER(Q)"}
-        for c in rej_cols:
-            fig.add_scatter(x=d_nos["period"], y=d_nos[c], stackgroup="one", name=names[c], line=dict(color=colors[c]))
-        fig.update_layout(template=PLOT_TEMPLATE, height=280, legend=dict(orientation="h", y=1.15))
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("Map the ER / FOR / ER(Q) rejection columns to see this chart.")
+
 
 A Streamlit dashboard that replicates the reference UI: KPI cards, grade-wise
 donuts, daily/monthly trends, run-rate tracking, breakage pareto, a rejection
