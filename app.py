@@ -1,386 +1,822 @@
-"""
-Solar Cell Manufacturing Dashboard
-Run with:  streamlit run app.py
-"""
-import datetime as dt
-
-import pandas as pd
-import plotly.graph_objects as go
 import streamlit as st
+import pandas as pd
+import plotly.express as px
+from calendar import monthrange
 
-import data_utils as du
+# --------------------------------------------------
+# Page Configuration
+# --------------------------------------------------
+st.set_page_config(
+    page_title="Solar Dashboard",
+    layout="wide"
+)
 
-st.set_page_config(page_title="Solar Cell Manufacturing Dashboard", layout="wide")
-
-# ---------------------------------------------------------------------------
-# Theme
-# ---------------------------------------------------------------------------
-DARK_BG = "#0e1526"
-CARD_BG = "#151d33"
-PLOT_TEMPLATE = "plotly_dark"
-GRADE_COLORS = {"A Grade": "#2f6fed", "B Grade": "#22c55e", "B-EL Grade": "#f59e0b", "EB Grade": "#a855f7"}
-
-st.markdown(f"""
-<style>
-.stApp {{ background-color: {DARK_BG}; }}
-div[data-testid="stMetric"], .kpi-card {{
-    background-color: {CARD_BG};
-    border-radius: 10px;
-    padding: 14px 16px;
-}}
-</style>
+# --------------------------------------------------
+# Header
+# --------------------------------------------------
+st.markdown("""
+<div style="
+background:#1565C0;
+padding:20px;
+border-radius:15px;
+text-align:center;
+color:#ffffff;">
+<h1>☀ RENEW CELL LINE PRODUCTION DASHBOARD - PERC TECHNOLOGY</h1>
+</div>
 """, unsafe_allow_html=True)
 
+# --------------------------------------------------
+# CSS Styling
+# --------------------------------------------------
+st.markdown("""
+<style>
 
-# ---------------------------------------------------------------------------
-# Sidebar — data upload & mapping
-# ---------------------------------------------------------------------------
-st.sidebar.header("📂 Data Source")
-uploaded = st.sidebar.file_uploader(
-    "Upload Excel workbook (with the 4 sheets) — or multiple files, one sheet each",
-    type=["xlsx"], accept_multiple_files=True,
+h1 {
+    font-size: 42px !important;
+    font-weight: bold !important;
+}
+
+h3 {
+    font-size: 40px !important;
+    font-weight: bold !important;
+    color:#1565C0;
+}
+
+[data-testid="stMetricValue"] {
+    font-size: 48px !important;
+    font-weight: bold !important;
+    color: #1565C0;
+}
+
+[data-testid="stMetricLabel"] {
+    font-size: 30px !important;
+    font-weight: bold !important;
+}
+
+div[data-testid="stMetric"] {
+    background:white;
+    border-left:6px solid #1565C0;
+    padding:20px;
+    min-height:130px;
+    border-radius:15px;
+    border-top:1px solid #D6D6D6;
+    border-right:1px solid #D6D6D6;
+    border-bottom:1px solid #D6D6D6;
+    text-align:center;
+}
+
+section[data-testid="stSidebar"] {
+    width: 320px !important;
+}
+
+</style>
+""", unsafe_allow_html=True)
+def kpi_card(title, value, color="#1565C0"):
+    st.markdown(
+        f"""
+        <div style="
+            background:white;
+            border-left:8px solid {color};
+            border-radius:16px;
+            padding:22px;
+            min-height:120px;
+            box-shadow:0 2px 8px rgba(0,0,0,0.12);
+            display:flex;
+            flex-direction:column;
+            justify-content:center;
+            align-items:center;
+            text-align:center;
+        ">
+            <div style="
+                font-size:28px;
+                font-weight:700;
+                color:#333333;
+                margin-bottom:12px;
+            ">
+                {title}
+            </div>
+            <div style="
+                font-size:46px;
+                font-weight:800;
+                color:{color};
+            ">
+                {value}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+# --------------------------------------------------
+# File Upload Section
+# --------------------------------------------------
+st.sidebar.markdown("### Upload Files")
+
+mw_file = st.sidebar.file_uploader(
+    "Upload MW Report",
+    type=["xlsx"]
 )
-use_sample = st.sidebar.checkbox("Use bundled sample data instead", value=not uploaded)
 
-if "clean_data" not in st.session_state:
-    st.session_state.clean_data = {}
+plan_file = st.sidebar.file_uploader(
+    "Upload Plan File",
+    type=["xlsx"]
+)
 
+daywise_file = st.sidebar.file_uploader(
+    "Upload Daywise File",
+    type=["xlsx"]
+)
+def apply_chart_style(fig, height=500):
+    fig.update_layout(
+        height=height,
+        title_font_size=34,
+        font=dict(size=28),
+        xaxis_title_font=dict(size=24),
+        yaxis_title_font=dict(size=24),
+        xaxis=dict(
+            tickfont=dict(size=18)
+        ),
+        yaxis=dict(
+            tickfont=dict(size=18)
+        ),
+        legend=dict(
+            font=dict(size=20)
+        ),
+        hoverlabel=dict(
+            bgcolor="white",
+            font_size=22,
+            font_family="Arial",
+            font_color="black"
+        ),
+        margin=dict(l=40, r=40, t=80, b=60)
+    )
+    return fig
+# --------------------------------------------------
+# Read Uploaded Files
+# --------------------------------------------------
+if mw_file and plan_file and daywise_file:
+    st.sidebar.success("Files Uploaded Successfully")
 
-def _ingest(sheets: dict):
-    """Given {sheet_name: df}, guess roles, auto-map columns, let user confirm, store clean dfs."""
-    role_to_sheet = du.guess_sheet_roles(list(sheets.keys()))
-    with st.sidebar.expander("🔧 Confirm sheet & column mapping", expanded=False):
-        for role, label in du.ROLE_LABELS.items():
-            st.markdown(f"**{label}**")
-            options = ["-- none --"] + list(sheets.keys())
-            default = role_to_sheet.get(role, "-- none --")
-            idx = options.index(default) if default in options else 0
-            chosen = st.selectbox(f"Sheet for: {label}", options, index=idx, key=f"sheet_{role}")
-            if chosen != "-- none --":
-                df = sheets[chosen]
-                schema = du.ROLE_SCHEMAS[role]
-                mapping = du.auto_map_columns(df, schema)
-                cols = ["-- none --"] + list(df.columns)
-                new_mapping = {}
-                for key, field_label, _ in schema:
-                    guess = mapping.get(key)
-                    opt_idx = cols.index(guess) if guess in cols else 0
-                    sel = st.selectbox(field_label, cols, index=opt_idx, key=f"col_{role}_{key}")
-                    new_mapping[key] = None if sel == "-- none --" else sel
-                clean = du.build_clean_df(df, new_mapping, "month" in role)
-                st.session_state.clean_data[role] = clean
-            else:
-                st.session_state.clean_data.pop(role, None)
-            st.divider()
+    mw = pd.read_excel(mw_file)
+    plan = pd.read_excel(plan_file)
+    daywise = pd.read_excel(daywise_file)
 
+    # Clean column names
+    mw.columns = mw.columns.str.strip()
+    plan.columns = plan.columns.str.strip()
+    daywise.columns = daywise.columns.str.strip()
 
-if use_sample:
-    sheets = du.load_all_sheets("sample_data.xlsx")
-    _ingest(sheets)
-elif uploaded:
-    sheets = {}
-    for f in uploaded:
-        sheets.update(du.load_all_sheets(f))
-    _ingest(sheets)
 else:
-    st.info("Upload your Excel file(s) in the sidebar, or check 'Use bundled sample data' to preview the dashboard.")
+    st.info("Please upload all files to view the dashboard")
     st.stop()
 
-day_nos = st.session_state.clean_data.get("day_nos")
-month_nos = st.session_state.clean_data.get("month_nos")
-day_mw = st.session_state.clean_data.get("day_mw")
-month_mw = st.session_state.clean_data.get("month_mw")
+# --------------------------------------------------
+# Required Column Validation
+# --------------------------------------------------
+required_mw_columns = [
+    "DATE",
+    "A-GRADE SALEABLE",
+    "B-GRADE SALEABLE",
+    "B-EL GRADE SALEABLE",
+    "EB GRADE SALEABLE",
+    "TOTAL PRODUCTION",
+    "A-GRADE SALEABLE(MW)",
+    "B-GRADE SALEABLE(MW)",
+    "B-EL GRADE SALEABLE(MW)",
+    "EB GRADE SALEABLE(MW)",
+    "TOTAL PRODUCTION(MW)"
+]
 
-if day_mw is None or day_mw.empty:
-    st.warning("Please map at least the 'Daywise MW report' sheet to see the dashboard.")
+required_daywise_columns = [
+    "DATE",
+    "A-GRADE",
+    "B-GRADE",
+    "B-EL GRADE",
+    "EB GRADE",
+    "TOTAL PRODUCTION",
+    "TOTAL REJECTION",
+    "TOTAL BREAKAGES",
+    "R-W BREAKAGE",
+    "B-W BREAKAGE",
+    "AL-W BREAKAGE",
+    "AG-W BREAKAGE",
+    "CELL BREAKAGE",
+    "A-GRADE YIELD(%)"
+]
+
+required_plan_columns = [
+    "Month",
+    "Total Target"
+]
+
+missing_mw = [col for col in required_mw_columns if col not in mw.columns]
+missing_daywise = [col for col in required_daywise_columns if col not in daywise.columns]
+missing_plan = [col for col in required_plan_columns if col not in plan.columns]
+
+if missing_mw:
+    st.error("Wrong MW Report uploaded or missing columns:")
+    st.write(missing_mw)
+    st.write("Available MW columns:")
+    st.write(list(mw.columns))
     st.stop()
 
+if missing_daywise:
+    st.error("Wrong Daywise Data file uploaded or missing columns:")
+    st.write(missing_daywise)
+    st.write("Available Daywise columns:")
+    st.write(list(daywise.columns))
+    st.stop()
 
-# ---------------------------------------------------------------------------
-# Sidebar — filters
-# ---------------------------------------------------------------------------
-st.sidebar.header("🗓️ Filters")
-min_d, max_d = day_mw["period"].min().date(), day_mw["period"].max().date()
-date_range = st.sidebar.date_input("Date range", value=(min_d, max_d), min_value=min_d, max_value=max_d)
+if missing_plan:
+    st.error("Wrong Plan file uploaded or missing columns:")
+    st.write(missing_plan)
+    st.write("Available Plan columns:")
+    st.write(list(plan.columns))
+    st.stop()
+
+# --------------------------------------------------
+# Date Conversion
+# --------------------------------------------------
+mw["DATE"] = pd.to_datetime(mw["DATE"])
+daywise["DATE"] = pd.to_datetime(daywise["DATE"])
+plan["Month"] = pd.to_datetime(plan["Month"])
+
+# --------------------------------------------------
+# Financial Year Function
+# --------------------------------------------------
+def get_fy(date):
+    if date.month >= 4:
+        return f"FY {date.year}-{str(date.year + 1)[-2:]}"
+    else:
+        return f"FY {date.year - 1}-{str(date.year)[-2:]}"
+
+mw["FY"] = mw["DATE"].apply(get_fy)
+daywise["FY"] = daywise["DATE"].apply(get_fy)
+
+# --------------------------------------------------
+# Sidebar Filters
+# --------------------------------------------------
+st.sidebar.markdown("## Filters")
+
+fy_list = sorted(
+    mw["FY"].unique(),
+    reverse=True
+)
+
+selected_fy = st.sidebar.selectbox(
+    "Financial Year",
+    fy_list
+)
+
+year_list = sorted(
+    mw["DATE"].dt.year.unique()
+)
+
+selected_year = st.sidebar.selectbox(
+    "Select Year",
+    year_list,
+    index=len(year_list) - 1
+)
+
+month_list = [
+    "All",
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+]
+
+month_dict = {
+    "Jan": 1,
+    "Feb": 2,
+    "Mar": 3,
+    "Apr": 4,
+    "May": 5,
+    "Jun": 6,
+    "Jul": 7,
+    "Aug": 8,
+    "Sep": 9,
+    "Oct": 10,
+    "Nov": 11,
+    "Dec": 12
+}
+
+selected_month = st.sidebar.selectbox(
+    "Select Month",
+    month_list
+)
+
+# --------------------------------------------------
+# Calendar Date Range Filter
+# --------------------------------------------------
+st.sidebar.subheader("📅 Date Range")
+
+date_range = st.sidebar.date_input(
+    "Select From Date and To Date",
+    value=(
+        mw["DATE"].min().date(),
+        mw["DATE"].max().date()
+    )
+)
+
 if isinstance(date_range, tuple) and len(date_range) == 2:
-    start_d, end_d = date_range
+    start_date, end_date = date_range
 else:
-    start_d, end_d = min_d, max_d
+    start_date = date_range
+    end_date = date_range
 
-st.sidebar.header("🎯 Monthly Target (Plan)")
-default_plan = float(month_mw["total_mw"].mean()) * 1.15 if month_mw is not None and not month_mw.empty else 150.0
-monthly_plan_mw = st.sidebar.number_input("Plan MW for current month", value=round(default_plan, 2), step=1.0)
-required_rate = st.sidebar.number_input("Required run rate override (MW/day, 0=auto)", value=0.0, step=0.1)
+# --------------------------------------------------
+# Filter MW Data
+# --------------------------------------------------
+filtered_mw = mw.copy()
 
-mask = (day_mw["period"].dt.date >= start_d) & (day_mw["period"].dt.date <= end_d)
-d_mw = day_mw.loc[mask].copy()
-d_nos = day_nos.loc[(day_nos["period"].dt.date >= start_d) & (day_nos["period"].dt.date <= end_d)].copy() if day_nos is not None else None
+filtered_mw = filtered_mw[
+    filtered_mw["FY"] == selected_fy
+]
 
-if d_mw.empty:
-    st.warning("No data in the selected date range.")
+filtered_mw = filtered_mw[
+    filtered_mw["DATE"].dt.year == selected_year
+]
+
+if selected_month != "All":
+    filtered_mw = filtered_mw[
+        filtered_mw["DATE"].dt.month == month_dict[selected_month]
+    ]
+
+filtered_mw = filtered_mw[
+    (filtered_mw["DATE"].dt.date >= start_date) &
+    (filtered_mw["DATE"].dt.date <= end_date)
+]
+
+# --------------------------------------------------
+# Filter Daywise Data
+# --------------------------------------------------
+filtered_daywise = daywise.copy()
+
+filtered_daywise = filtered_daywise[
+    filtered_daywise["FY"] == selected_fy
+]
+
+filtered_daywise = filtered_daywise[
+    filtered_daywise["DATE"].dt.year == selected_year
+]
+
+if selected_month != "All":
+    filtered_daywise = filtered_daywise[
+        filtered_daywise["DATE"].dt.month == month_dict[selected_month]
+    ]
+
+filtered_daywise = filtered_daywise[
+    (filtered_daywise["DATE"].dt.date >= start_date) &
+    (filtered_daywise["DATE"].dt.date <= end_date)
+]
+
+# --------------------------------------------------
+# Empty Data Check
+# --------------------------------------------------
+if filtered_mw.empty:
+    st.warning("No MW data available for selected filters")
     st.stop()
 
+if filtered_daywise.empty:
+    st.warning("No Daywise data available for selected filters")
+    st.stop()
 
-# ---------------------------------------------------------------------------
-# KPI calculations
-# ---------------------------------------------------------------------------
-latest_date = d_mw["period"].max()
-today_row = d_mw[d_mw["period"] == latest_date]
-today_mw = float(today_row["total_mw"].sum())
+# --------------------------------------------------
+# Latest Records
+# --------------------------------------------------
+latest = filtered_mw.iloc[-1]
+latest_date = filtered_mw["DATE"].max()
 
-prior_day = d_mw[d_mw["period"] < latest_date]
-yesterday_mw = float(prior_day["total_mw"].iloc[-1]) if not prior_day.empty else None
-today_vs_yday = ((today_mw - yesterday_mw) / yesterday_mw * 100) if yesterday_mw else None
+# --------------------------------------------------
+# Filter Info
+# --------------------------------------------------
+st.markdown(
+    f"""
+    <div style='text-align:right;
+                color:gray;
+                font-size:16px'>
+    FY: {selected_fy} | Year: {selected_year} | Month: {selected_month} | Period: {start_date} to {end_date}
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 
-month_start = latest_date.replace(day=1)
-mtd = d_mw[(d_mw["period"] >= month_start) & (d_mw["period"] <= latest_date)]
-mtd_mw = float(mtd["total_mw"].sum())
+# --------------------------------------------------
+# Production Calculations
+# --------------------------------------------------
+mtd_data = mw[
+    (mw["DATE"].dt.year == latest_date.year) &
+    (mw["DATE"].dt.month == latest_date.month)
+]
 
-prev_month_end = month_start - pd.Timedelta(days=1)
-prev_month_start = prev_month_end.replace(day=1)
-same_day_prev_month = prev_month_start + (latest_date - month_start)
-prev_mtd = day_mw[(day_mw["period"] >= prev_month_start) & (day_mw["period"] <= same_day_prev_month)]
-prev_mtd_mw = float(prev_mtd["total_mw"].sum())
-mtd_vs_lastmonth = ((mtd_mw - prev_mtd_mw) / prev_mtd_mw * 100) if prev_mtd_mw else None
+mtd_mw = mtd_data["TOTAL PRODUCTION(MW)"].sum()
 
-year_start = latest_date.replace(month=1, day=1)
-ytd = day_mw[(day_mw["period"] >= year_start) & (day_mw["period"] <= latest_date)]
-ytd_mw = float(ytd["total_mw"].sum())
-prev_year_start = year_start.replace(year=year_start.year - 1)
-prev_year_end = latest_date.replace(year=latest_date.year - 1)
-ytd_prev = day_mw[(day_mw["period"] >= prev_year_start) & (day_mw["period"] <= prev_year_end)]
-ytd_prev_mw = float(ytd_prev["total_mw"].sum())
-ytd_vs_lastyear = ((ytd_mw - ytd_prev_mw) / ytd_prev_mw * 100) if ytd_prev_mw else None
+ytd_data = mw[
+    mw["FY"] == selected_fy
+]
 
-a_saleable = float(mtd["a_num"].sum()) if "a_num" in mtd.columns else 0
-total_nos_mtd = None
-reject_pct = None
-if d_nos is not None and not d_nos.empty:
-    nos_mtd = d_nos[(d_nos["period"] >= month_start) & (d_nos["period"] <= latest_date)]
-    total_produced = float(nos_mtd["total_prod"].sum()) if "total_prod" in nos_mtd.columns else None
-    total_rejected = float(nos_mtd["total_reject"].sum()) if "total_reject" in nos_mtd.columns else None
-    if total_produced:
-        yield_pct = (1 - (total_rejected or 0) / total_produced) * 100 if total_produced else None
-        reject_pct = (total_rejected / total_produced * 100) if total_produced else None
-    else:
-        yield_pct = None
+ytd_mw = ytd_data["TOTAL PRODUCTION(MW)"].sum()
+
+# --------------------------------------------------
+# Plan Calculations
+# --------------------------------------------------
+current_month_plan = plan[
+    (plan["Month"].dt.month == latest_date.month) &
+    (plan["Month"].dt.year == latest_date.year)
+]
+
+current_plan = current_month_plan["Total Target"].sum()
+
+if current_plan > 0:
+    achievement = (mtd_mw / current_plan) * 100
 else:
-    yield_pct = None
+    achievement = 0
 
-n_days_mtd = mtd["period"].nunique() or 1
-run_rate = mtd_mw / n_days_mtd
-if required_rate <= 0:
-    days_in_month = pd.Period(latest_date, freq="M").days_in_month
-    remaining_days = max(days_in_month - latest_date.day + 1, 1)
-    remaining_target = max(monthly_plan_mw - mtd_mw, 0)
-    required_rate_calc = remaining_target / remaining_days
+# --------------------------------------------------
+# Run Rate / Required Rate
+# --------------------------------------------------
+days_completed = filtered_mw["DATE"].dt.day.max()
+
+if days_completed > 0:
+    run_rate = mtd_mw / days_completed
 else:
-    required_rate_calc = required_rate
-plan_achv = (mtd_mw / monthly_plan_mw * 100) if monthly_plan_mw else None
+    run_rate = 0
 
+days_in_month = monthrange(
+    latest_date.year,
+    latest_date.month
+)[1]
 
-def fmt_delta(v, suffix="%"):
-    if v is None:
-        return ""
-    arrow = "▲" if v >= 0 else "▼"
-    return f"{arrow} {abs(v):.2f}{suffix}"
+days_remaining = days_in_month - days_completed
 
-
-# ---------------------------------------------------------------------------
-# Header
-# ---------------------------------------------------------------------------
-c1, c2 = st.columns([3, 1])
-with c1:
-    st.markdown("## ☀️ SOLAR CELL MANUFACTURING DASHBOARD")
-    st.caption(f"Final Product | Real Time Production Monitoring — as of {latest_date.strftime('%d %b %Y')}")
-with c2:
-    st.metric("Last Refresh", dt.datetime.now().strftime("%H:%M"))
-
-# ---------------------------------------------------------------------------
-# KPI Row
-# ---------------------------------------------------------------------------
-k = st.columns(8)
-k[0].metric("Today's Production", f"{today_mw:.2f} MW", fmt_delta(today_vs_yday) + " vs Yesterday" if today_vs_yday is not None else "vs Yesterday")
-k[1].metric("MTD Production", f"{mtd_mw:.2f} MW", fmt_delta(mtd_vs_lastmonth) + " vs Last Month" if mtd_vs_lastmonth is not None else "vs Last Month")
-k[2].metric("YTD Production", f"{ytd_mw:.2f} MW", fmt_delta(ytd_vs_lastyear) + " vs Last Year" if ytd_vs_lastyear is not None else "vs Last Year")
-k[3].metric("Yield %", f"{yield_pct:.2f}%" if yield_pct is not None else "N/A")
-k[4].metric("Reject %", f"{reject_pct:.2f}%" if reject_pct is not None else "N/A")
-k[5].metric("Run Rate", f"{run_rate:.2f} MW/day")
-k[6].metric("Required Rate", f"{required_rate_calc:.2f} MW/day")
-k[7].metric("Plan Achievement", f"{plan_achv:.2f}%" if plan_achv is not None else "N/A")
-
-st.divider()
-
-# ---------------------------------------------------------------------------
-# Row 2: Grade-wise donuts + Daily trend
-# ---------------------------------------------------------------------------
-GRADE_KEYS_MW = [("a_mw", "A Grade"), ("b_mw", "B Grade"), ("bel_mw", "BEL Grade"), ("eb_mw", "EB Grade")]
-GRADE_KEYS_NOS = [("a_num", "A Grade"), ("b_num", "B Grade"), ("bel_num", "BEL Grade"), ("eb_num", "EB Grade")]
-
-r2c1, r2c2, r2c3 = st.columns([1, 1, 1.3])
-
-with r2c1:
-    st.markdown("#### Grade Wise Production (Nos.)")
-    vals = [float(mtd[k_].sum()) for k_, _ in GRADE_KEYS_NOS if k_ in mtd.columns]
-    labels = [lbl for k_, lbl in GRADE_KEYS_NOS if k_ in mtd.columns]
-    fig = go.Figure(go.Pie(labels=labels, values=vals, hole=0.65,
-                            marker=dict(colors=[GRADE_COLORS.get(l, "#888") for l in labels])))
-    fig.update_layout(template=PLOT_TEMPLATE, showlegend=True, height=320,
-                       annotations=[dict(text=f"Total<br><b>{sum(vals):,.0f}</b><br>Nos.", showarrow=False, font_size=14)])
-    st.plotly_chart(fig, use_container_width=True)
-
-with r2c2:
-    st.markdown("#### Grade Wise Production (MW)")
-    vals = [float(mtd[k_].sum()) for k_, _ in GRADE_KEYS_MW if k_ in mtd.columns]
-    labels = [lbl for k_, lbl in GRADE_KEYS_MW if k_ in mtd.columns]
-    fig = go.Figure(go.Pie(labels=labels, values=vals, hole=0.65,
-                            marker=dict(colors=[GRADE_COLORS.get(l, "#888") for l in labels])))
-    fig.update_layout(template=PLOT_TEMPLATE, showlegend=True, height=320,
-                       annotations=[dict(text=f"Total<br><b>{sum(vals):,.2f}</b><br>MW", showarrow=False, font_size=14)])
-    st.plotly_chart(fig, use_container_width=True)
-
-with r2c3:
-    st.markdown("#### Daily Production Trend (MW)")
-    fig = go.Figure(go.Scatter(x=d_mw["period"], y=d_mw["total_mw"], mode="lines+markers",
-                                line=dict(color="#2f6fed"), fill="tozeroy"))
-    fig.update_layout(template=PLOT_TEMPLATE, height=320, margin=dict(t=10))
-    st.plotly_chart(fig, use_container_width=True)
-
-# ---------------------------------------------------------------------------
-# Row 3: Plan vs Actual, Run Rate vs Required, MTD Summary
-# ---------------------------------------------------------------------------
-r3c1, r3c2, r3c3 = st.columns([1.3, 1.3, 1])
-
-with r3c1:
-    st.markdown("#### Plan vs Actual (Monthly)")
-    if month_mw is not None and not month_mw.empty:
-        mm = month_mw.copy()
-        mm["month_label"] = mm["period"].dt.strftime("%b")
-        # crude plan proxy: user's plan input scaled, or 1.1x actual if not enough info
-        mm["plan_mw"] = monthly_plan_mw
-        fig = go.Figure()
-        fig.add_bar(x=mm["month_label"], y=mm["plan_mw"], name="Plan MW", marker_color="#8892b0")
-        fig.add_bar(x=mm["month_label"], y=mm["total_mw"], name="Actual MW", marker_color="#2f6fed")
-        fig.update_layout(template=PLOT_TEMPLATE, barmode="group", height=300, legend=dict(orientation="h", y=1.15))
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("Map the Monthwise MW report sheet to see this chart.")
-
-with r3c2:
-    st.markdown("#### Run Rate vs Required Rate (MW/day)")
-    daily_run = d_mw.set_index("period")["total_mw"].rename("Run Rate")
-    fig = go.Figure()
-    fig.add_scatter(x=daily_run.index, y=daily_run.values, mode="lines+markers", name="Run Rate", line=dict(color="#22c55e"))
-    fig.add_scatter(x=daily_run.index, y=[required_rate_calc] * len(daily_run), mode="lines", name="Required Rate", line=dict(color="#f59e0b", dash="dot"))
-    fig.update_layout(template=PLOT_TEMPLATE, height=300, legend=dict(orientation="h", y=1.15))
-    st.plotly_chart(fig, use_container_width=True)
-
-with r3c3:
-    st.markdown("#### MTD Summary")
-    a_pct = (float(mtd["a_mw"].sum()) / mtd_mw * 100) if mtd_mw else 0
-    st.write(f"**Total Production:** {mtd_mw:.2f} MW")
-    st.write(f"**A Grade Production:** {float(mtd['a_mw'].sum()):.2f} MW ({a_pct:.1f}%)")
-    if d_nos is not None and not d_nos.empty and "total_reject" in nos_mtd.columns:
-        st.write(f"**Total Rejection:** {float(nos_mtd['total_reject'].sum()):,.0f} cells")
-    if d_nos is not None and not d_nos.empty and "total_brk" in nos_mtd.columns:
-        st.write(f"**Total Breakage:** {float(nos_mtd['total_brk'].sum()):,.0f} cells")
-    st.write(f"**Yield %:** {yield_pct:.2f}%" if yield_pct is not None else "**Yield %:** N/A")
-    st.write(f"**Plan Achievement:** {plan_achv:.2f}%" if plan_achv is not None else "**Plan Achievement:** N/A")
-
-st.divider()
-
-# ---------------------------------------------------------------------------
-# Row 4: Yield trend, Rejection trend, Breakage pareto, Heatmap
-# ---------------------------------------------------------------------------
-r4c1, r4c2, r4c3, r4c4 = st.columns(4)
-
-with r4c1:
-    st.markdown("#### Yield Trend (%)")
-    if d_nos is not None and not d_nos.empty:
-        tmp = d_nos.copy()
-        for grade_key, rej_share in [("a_grade", None)]:
-            pass
-        tmp["yield_pct"] = (1 - tmp["total_reject"] / tmp["total_prod"].replace(0, pd.NA)) * 100
-        fig = go.Figure(go.Scatter(x=tmp["period"], y=tmp["yield_pct"], mode="lines", line=dict(color="#22d3ee")))
-        fig.update_layout(template=PLOT_TEMPLATE, height=280)
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("Map the Day wise nos sheet to see yield trend.")
-
-with r4c2:
-    st.markdown("#### Rejection Trend (MW / Nos)")
-    if d_nos is not None and not d_nos.empty:
-        fig = go.Figure()
-        fig.add_scatter(x=d_nos["period"], y=d_nos["er"], stackgroup="one", name="ER", line=dict(color="#ef4444"))
-        fig.add_scatter(x=d_nos["period"], y=d_nos["fo_r"], stackgroup="one", name="FOR", line=dict(color="#f97316"))
-        fig.add_scatter(x=d_nos["period"], y=d_nos["er_q"], stackgroup="one", name="ER(Q)", line=dict(color="#a855f7"))
-        fig.update_layout(template=PLOT_TEMPLATE, height=280, legend=dict(orientation="h", y=1.15))
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("Map the Day wise nos sheet to see rejection trend.")
-
-with r4c3:
-    st.markdown("#### Breakage Pareto")
-    if d_nos is not None and not d_nos.empty:
-        brk_cols = [("raw_wafer", "Raw Wafer"), ("blue", "Blue"), ("al", "Al"), ("ag", "Ag"), ("cell_brk", "Cell")]
-        sums = [(lbl, float(d_nos[k_].sum())) for k_, lbl in brk_cols if k_ in d_nos.columns]
-        sums.sort(key=lambda x: -x[1])
-        labels = [s[0] for s in sums]
-        vals = [s[1] for s in sums]
-        fig = go.Figure(go.Bar(x=vals, y=labels, orientation="h", marker_color="#2f6fed"))
-        fig.update_layout(template=PLOT_TEMPLATE, height=280, yaxis=dict(autorange="reversed"))
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("Map the Day wise nos sheet to see breakage pareto.")
-
-with r4c4:
-    st.markdown("#### Rejection Heatmap")
-    if d_nos is not None and not d_nos.empty:
-        tmp = d_nos.copy()
-        tmp["dow"] = tmp["period"].dt.day_name().str[:3]
-        tmp["week"] = tmp["period"].dt.isocalendar().week
-        pivot = tmp.pivot_table(index="week", columns="dow", values="total_reject", aggfunc="sum")
-        dow_order = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-        pivot = pivot.reindex(columns=[d for d in dow_order if d in pivot.columns])
-        fig = go.Figure(go.Heatmap(z=pivot.values, x=pivot.columns, y=[f"Wk{w}" for w in pivot.index],
-                                    colorscale=[[0, "#22c55e"], [0.5, "#f59e0b"], [1, "#ef4444"]]))
-        fig.update_layout(template=PLOT_TEMPLATE, height=280)
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("Map the Day wise nos sheet to see the heatmap.")
-
-st.divider()
-
-# ---------------------------------------------------------------------------
-# Row 5: Monthly performance summary table
-# ---------------------------------------------------------------------------
-st.markdown("#### Monthly Performance Summary")
-if month_mw is not None and not month_mw.empty:
-    tbl = month_mw.copy()
-    tbl["Month"] = tbl["period"].dt.strftime("%b-%Y")
-    tbl["Plan MW"] = monthly_plan_mw
-    tbl["Actual MW"] = tbl["total_mw"]
-    tbl["Achv %"] = (tbl["Actual MW"] / tbl["Plan MW"] * 100).round(2)
-    tbl["A Grade MW"] = tbl["a_mw"]
-    tbl["A Grade %"] = (tbl["a_mw"] / tbl["total_mw"] * 100).round(2)
-
-    if month_nos is not None and not month_nos.empty:
-        mn = month_nos.copy()
-        mn["Month"] = mn["period"].dt.strftime("%b-%Y")
-        mn["Yield %"] = ((1 - mn["total_reject"] / mn["total_prod"].replace(0, pd.NA)) * 100).round(2)
-        mn["Reject %"] = ((mn["total_reject"] / mn["total_prod"].replace(0, pd.NA)) * 100).round(2)
-        mn["Breakage %"] = ((mn["total_brk"] / mn["total_prod"].replace(0, pd.NA)) * 100).round(2)
-        tbl = tbl.merge(mn[["Month", "Yield %", "Reject %", "Breakage %"]], on="Month", how="left")
-
-    n_days_per_month = month_mw["period"].dt.days_in_month if "period" in month_mw else 30
-    tbl["Run Rate (MW/day)"] = (tbl["Actual MW"] / n_days_per_month).round(2)
-    tbl["Required Rate (MW/day)"] = (tbl["Plan MW"] / n_days_per_month).round(2)
-
-    display_cols = ["Month", "Plan MW", "Actual MW", "Achv %", "A Grade MW", "A Grade %",
-                     "Yield %", "Reject %", "Breakage %", "Run Rate (MW/day)", "Required Rate (MW/day)"]
-    display_cols = [c for c in display_cols if c in tbl.columns]
-    st.dataframe(tbl[display_cols].round(2), use_container_width=True, hide_index=True)
+if days_remaining > 0:
+    required_rate = (current_plan - mtd_mw) / days_remaining
 else:
-    st.info("Map the Monthwise MW report sheet to see the monthly summary table.")
+    required_rate = 0
 
-st.caption("All values are in MW unless specified | Source: uploaded Excel file(s)")
+# --------------------------------------------------
+# Quality Calculations
+# --------------------------------------------------
+total_production = filtered_daywise["TOTAL PRODUCTION"].sum()
+total_rejection = filtered_daywise["TOTAL REJECTION"].sum()
+total_breakage = filtered_daywise["TOTAL BREAKAGES"].sum()
+
+total_input = (
+    total_production +
+    total_rejection +
+    total_breakage
+)
+
+if total_input > 0:
+    yield_pct = (total_production / total_input) * 100
+    rejection_pct = (total_rejection / total_input) * 100
+    breakage_pct = (total_breakage / total_input) * 100
+else:
+    yield_pct = 0
+    rejection_pct = 0
+    breakage_pct = 0
+
+# --------------------------------------------------
+# Production KPIs
+# --------------------------------------------------
+st.markdown("---")
+st.subheader("Production KPIs")
+
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    kpi_card("MTD Production", f"{mtd_mw:.2f} MW", "#1565C0")
+
+with col2:
+    kpi_card("FYTD Production", f"{ytd_mw:.2f} MW", "#2E7D32")
+
+with col3:
+    kpi_card("Today's Production", f"{latest['TOTAL PRODUCTION(MW)']:.2f} MW", "#EF6C00")
+
+with col4:
+    kpi_card("Total Qty", f"{latest['TOTAL PRODUCTION']:,.0f}", "#6A1B9A")
+
+col5, col6, col7, col8 = st.columns(4)
+
+with col5:
+    kpi_card("A Grade MW", f"{latest['A-GRADE SALEABLE(MW)']:.2f}", "#1B5E20")
+
+with col6:
+    kpi_card("B Grade MW", f"{latest['B-GRADE SALEABLE(MW)']:.2f}", "#0277BD")
+
+with col7:
+    kpi_card("BEL Grade MW", f"{latest['B-EL GRADE SALEABLE(MW)']:.2f}", "#F9A825")
+
+with col8:
+    kpi_card("EB Grade MW", f"{latest['EB GRADE SALEABLE(MW)']:.2f}", "#C62828")
+
+col9, col10, col11, col12 = st.columns(4)
+
+with col9:
+    kpi_card("A Grade Qty", f"{latest['A-GRADE SALEABLE']:,.0f}", "#1B5E20")
+
+with col10:
+    kpi_card("B Grade Qty", f"{latest['B-GRADE SALEABLE']:,.0f}", "#0277BD")
+with col11:
+    kpi_card("BEL Grade Qty", f"{latest['B-EL GRADE SALEABLE']:,.0f}", "#F9A825")
+with col12:
+    kpi_card("EB Grade Qty", f"{latest['EB GRADE SALEABLE']:,.0f}", "#C62828")
+
+# --------------------------------------------------
+# Planning KPIs
+# --------------------------------------------------
+st.markdown("---")
+st.subheader("Planning KPIs")
+
+col13, col14, col15 = st.columns(3)
+
+with col13:
+    kpi_card("Plan MW", f"{current_plan:.2f}", "#1565C0")
+
+with col14:
+    kpi_card("Actual MW", f"{mtd_mw:.2f}", "#2E7D32")
+
+with col15:
+    kpi_card("Achievement %", f"{achievement:.2f}%", "#EF6C00")
+
+col16, col17 = st.columns(2)
+
+with col16:
+    kpi_card("Run Rate", f"{run_rate:.2f} MW/day", "#00838F")
+
+with col17:
+    kpi_card("Required Rate", f"{required_rate:.2f} MW/day", "#C50F5E")
+
+# --------------------------------------------------
+# Quality KPIs
+# --------------------------------------------------
+st.markdown("---")
+st.subheader("Quality KPIs")
+
+col18, col19, col20 = st.columns(3)
+
+col18.metric("Yield %", f"{yield_pct:.2f}%")
+col19.metric("Reject %", f"{rejection_pct:.2f}%")
+col20.metric("Breakage %", f"{breakage_pct:.2f}%")
+
+# --------------------------------------------------
+# Grade Mix Analysis
+# --------------------------------------------------
+st.markdown("---")
+st.subheader("Grade Mix Analysis")
+
+left, right = st.columns(2)
+
+grade_mw = pd.DataFrame({
+    "Grade": ["A Grade", "B Grade", "BEL Grade", "EB Grade"],
+    "MW": [
+        filtered_mw["A-GRADE SALEABLE(MW)"].sum(),
+        filtered_mw["B-GRADE SALEABLE(MW)"].sum(),
+        filtered_mw["B-EL GRADE SALEABLE(MW)"].sum(),
+        filtered_mw["EB GRADE SALEABLE(MW)"].sum()
+    ]
+})
+
+fig = px.pie(
+    grade_mw,
+    values="MW",
+    names="Grade",
+    hole=0.6,
+    title="Grade-wise Production MW"
+)
+
+fig = apply_chart_style(fig, height=500)
+
+
+with left:
+    st.plotly_chart(
+        fig,
+        use_container_width=True
+    )
+
+grade_qty = pd.DataFrame({
+    "Grade": ["A Grade", "B Grade", "BEL Grade", "EB Grade"],
+    "Qty": [
+        filtered_mw["A-GRADE SALEABLE"].sum(),
+        filtered_mw["B-GRADE SALEABLE"].sum(),
+        filtered_mw["B-EL GRADE SALEABLE"].sum(),
+        filtered_mw["EB GRADE SALEABLE"].sum()
+    ]
+})
+
+fig_qty = px.pie(
+    grade_qty,
+    values="Qty",
+    names="Grade",
+    hole=0.6,
+    title="Grade-wise Production Qty"
+)
+
+fig_qty = apply_chart_style(fig_qty, height=500)
+
+with right:
+    st.plotly_chart(
+        fig_qty,
+        use_container_width=True
+    )
+
+# --------------------------------------------------
+# Production Trend
+# --------------------------------------------------
+st.markdown("---")
+st.subheader("Production Trend")
+
+fig2 = px.area(
+    filtered_mw,
+    x="DATE",
+    y="TOTAL PRODUCTION(MW)",
+    markers=True,
+    title="Daily Production Trend (MW)"
+)
+
+fig2.update_traces(
+    hovertemplate="<b>Date:</b> %{x}<br><b>Production:</b> %{y:.2f} MW<extra></extra>"
+)
+fig2 = apply_chart_style(fig2, height=550)
+
+st.plotly_chart(
+    fig2,
+    use_container_width=True
+)
+
+# --------------------------------------------------
+# Planning Analysis
+# --------------------------------------------------
+st.markdown("---")
+st.subheader("Planning Analysis")
+
+plan_actual = pd.DataFrame({
+    "Type": ["Plan", "Actual"],
+    "MW": [current_plan, mtd_mw]
+})
+
+fig_plan = px.bar(
+    plan_actual,
+    x="Type",
+    y="MW",
+    color="Type",
+    title="Plan vs Actual",
+    text="MW",
+    hover_data={
+        "Type": True,
+        "MW": ":.2f"
+    }
+)
+
+fig_plan.update_traces(
+    texttemplate="%{text:.2f}",
+    textposition="outside",
+    marker_line_width=1.5
+)
+
+fig_plan = apply_chart_style(fig_plan, height=550)
+
+st.plotly_chart(
+    fig_plan,
+    use_container_width=True
+)
+# --------------------------------------------------
+# Monthly Plan vs Actual
+# --------------------------------------------------
+st.markdown("---")
+st.subheader("Monthly Plan vs Actual")
+
+mw_monthly = mw.copy()
+mw_monthly["Month_Key"] = mw_monthly["DATE"].dt.to_period("M").astype(str)
+
+actual_monthly = (
+    mw_monthly
+    .groupby("Month_Key")["TOTAL PRODUCTION(MW)"]
+    .sum()
+    .reset_index()
+)
+
+plan_monthly = plan.copy()
+plan_monthly["Month_Key"] = plan_monthly["Month"].dt.to_period("M").astype(str)
+
+plan_monthly = plan_monthly[
+    ["Month_Key", "Total Target"]
+]
+
+plan_actual_monthly = plan_monthly.merge(
+    actual_monthly,
+    on="Month_Key",
+    how="left"
+)
+
+plan_actual_monthly["TOTAL PRODUCTION(MW)"] = plan_actual_monthly[
+    "TOTAL PRODUCTION(MW)"
+].fillna(0)
+
+plan_actual_monthly["Achievement %"] = (
+    plan_actual_monthly["TOTAL PRODUCTION(MW)"] /
+    plan_actual_monthly["Total Target"]
+) * 100
+
+fig_plan_monthly = px.bar(
+    plan_actual_monthly,
+    x="Month_Key",
+    y=["Total Target", "TOTAL PRODUCTION(MW)"],
+    barmode="group",
+    title="Monthly Plan vs Actual",
+    text_auto=".2f"
+)
+
+fig_plan_monthly.update_traces(
+    textposition="outside",
+    hovertemplate="<b>Month:</b> %{x}<br><b>MW:</b> %{y:.2f}<extra></extra>"
+)
+
+fig_plan_monthly = apply_chart_style(
+    fig_plan_monthly,
+    height=650
+)
+
+st.plotly_chart(
+    fig_plan_monthly,
+    use_container_width=True
+)
+
+# --------------------------------------------------
+# Yield Trend
+# --------------------------------------------------
+st.markdown("---")
+st.subheader("Yield Trend")
+
+fig_yield = px.line(
+    filtered_daywise,
+    x="DATE",
+    y="A-GRADE YIELD(%)",
+    markers=True,
+    title="A Grade Yield Trend"
+)
+
+fig_yield.update_traces(
+    line=dict(width=4),
+    marker=dict(size=10),
+    hovertemplate="<b>Date:</b> %{x}<br><b>A Grade Yield:</b> %{y:.2f}%<extra></extra>"
+)
+
+fig_yield = apply_chart_style(fig_yield, height=550)
+
+st.plotly_chart(
+    fig_yield,
+    use_container_width=True
+)
+
+# --------------------------------------------------
+# Rejection Trend
+# --------------------------------------------------
+st.markdown("---")
+st.subheader("Rejection Trend")
+
+fig_reject = px.line(
+    filtered_daywise,
+    x="DATE",
+    y="TOTAL REJECTION",
+    markers=True,
+    title="Total Rejection Trend"
+)
+
+fig_reject = apply_chart_style(fig_reject, height=550)
+
+st.plotly_chart(
+    fig_reject,
+    use_container_width=True
+)
+
+# --------------------------------------------------
+# Breakage Pareto
+# --------------------------------------------------
+st.markdown("---")
+st.subheader("Breakage Pareto")
+
+breakage_data = pd.DataFrame({
+    "Type": ["R-W", "B-W", "AL-W", "AG-W", "CELL"],
+    "Qty": [
+        filtered_daywise["R-W BREAKAGE"].sum(),
+        filtered_daywise["B-W BREAKAGE"].sum(),
+        filtered_daywise["AL-W BREAKAGE"].sum(),
+        filtered_daywise["AG-W BREAKAGE"].sum(),
+        filtered_daywise["CELL BREAKAGE"].sum()
+    ]
+})
+
+fig_breakage = px.bar(
+    breakage_data,
+    x="Qty",
+    y="Type",
+    orientation="h",
+    title="Breakage Pareto"
+)
+
+fig_breakage = apply_chart_style(fig_breakage, height=550)
+
+st.plotly_chart(
+    fig_breakage,
+    use_container_width=True
+)
