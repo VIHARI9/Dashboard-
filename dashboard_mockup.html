@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Solar Cell Manufacturing Dashboard — Mockup</title>
+<style>
+  :root{
+    --bg:#0b1120; --panel:#141c30; --panel2:#101828; --border:#233054;
+    --text:#e7ebf5; --muted:#8a93ab;
+    --blue:#3b7bff; --green:#22c55e; --amber:#f5a623; --red:#ef4444; --purple:#a855f7; --cyan:#22d3ee;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:"Segoe UI",Inter,system-ui,sans-serif;background:var(--bg);color:var(--text);}
+  .shell{display:flex;min-height:100vh;}
+
+  /* ---------- SIDEBAR ---------- */
+  .sidebar{width:230px;background:var(--panel2);border-right:1px solid var(--border);
+    display:flex;flex-direction:column;padding:20px 14px;flex-shrink:0;}
+  .brand{display:flex;align-items:center;gap:10px;margin-bottom:26px;padding:0 6px;}
+  .brand .sun{width:34px;height:34px;border-radius:50%;
+    background:radial-gradient(circle at 35% 35%, #ffe07a, #f5a623 70%);flex-shrink:0;}
+  .brand div{line-height:1.15;}
+  .brand b{font-size:13.5px;letter-spacing:.02em;}
+  .brand span{font-size:11px;color:var(--muted);}
+  .nav{display:flex;flex-direction:column;gap:4px;}
+  .nav a{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:8px;
+    color:var(--muted);text-decoration:none;font-size:14px;font-weight:500;cursor:pointer;}
+  .nav a .ic{width:18px;text-align:center;}
+  .nav a.active{background:var(--blue);color:#fff;}
+  .nav a:hover:not(.active){background:#1a2440;color:var(--text);}
+  .sidebar-foot{margin-top:auto;padding:12px 6px;border-top:1px solid var(--border);font-size:11.5px;color:var(--muted);}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;margin-right:6px;}
+
+  /* ---------- MAIN ---------- */
+  .main{flex:1;padding:22px 26px 40px;min-width:0;}
+
+  /* header */
+  .topbar{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;margin-bottom:22px;}
+  .titleblock h1{font-size:21px;margin:0 0 4px;letter-spacing:.01em;}
+  .titleblock p{margin:0;font-size:12.5px;color:var(--muted);}
+  .controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+  .pill{background:var(--panel);border:1px solid var(--border);border-radius:8px;
+    padding:8px 12px;font-size:12.5px;color:var(--text);display:flex;align-items:center;gap:8px;}
+  .pill .lbl{color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;}
+  .btn{background:var(--blue);color:#fff;border:none;border-radius:8px;padding:9px 16px;
+    font-size:12.5px;font-weight:600;cursor:pointer;}
+  .btn.ghost{background:var(--panel);border:1px solid var(--border);color:var(--text);}
+
+  /* KPI row */
+  .kpi-row{display:grid;grid-template-columns:repeat(8,1fr);gap:10px;margin-bottom:20px;}
+  .kpi{border-radius:10px;padding:12px 13px;position:relative;overflow:hidden;}
+  .kpi .lbl{font-size:10px;letter-spacing:.04em;text-transform:uppercase;opacity:.85;margin-bottom:6px;}
+  .kpi .val{font-size:19px;font-weight:700;}
+  .kpi .unit{font-size:11px;font-weight:400;opacity:.8;}
+  .kpi .delta{font-size:10.5px;margin-top:5px;opacity:.9;}
+  .kpi.c1{background:linear-gradient(160deg,#16264a,#101a34);}
+  .kpi.c2{background:linear-gradient(160deg,#123a2a,#0f2820);}
+  .kpi.c3{background:linear-gradient(160deg,#16264a,#101a34);}
+  .kpi.c4{background:linear-gradient(160deg,#123a2a,#0f2820);}
+  .kpi.c5{background:linear-gradient(160deg,#3a1618,#2a1012);}
+  .kpi.c6{background:linear-gradient(160deg,#3a2a10,#2a1e0c);}
+  .kpi.c7{background:linear-gradient(160deg,#2a1c40,#201430);}
+  .kpi.c8{background:var(--panel);display:flex;align-items:center;gap:10px;}
+  .gauge{width:52px;height:52px;border-radius:50%;flex-shrink:0;
+    background:conic-gradient(var(--green) 0% 85%, #2a3350 85% 100%);
+    display:flex;align-items:center;justify-content:center;}
+  .gauge span{width:38px;height:38px;border-radius:50%;background:var(--panel);
+    display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;}
+
+  /* panel grid */
+  .grid{display:grid;gap:14px;margin-bottom:14px;}
+  .g3{grid-template-columns:1fr 1fr 1.3fr;}
+  .g4{grid-template-columns:repeat(4,1fr);}
+  .g2{grid-template-columns:1fr 1fr;}
+  .g1-2{grid-template-columns:1.4fr 1fr;}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px;min-width:0;}
+  .panel h3{margin:0 0 12px;font-size:13px;letter-spacing:.01em;color:var(--text);}
+  .panel h3 small{color:var(--muted);font-weight:400;font-size:11px;display:block;margin-top:2px;}
+
+  /* donut */
+  .donut-wrap{display:flex;align-items:center;gap:16px;}
+  .donut{width:130px;height:130px;border-radius:50%;flex-shrink:0;position:relative;}
+  .donut::after{content:'';position:absolute;inset:20px;border-radius:50%;background:var(--panel);}
+  .donut-label{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:2;text-align:center;}
+  .donut-label b{font-size:14px;}
+  .donut-label span{font-size:9.5px;color:var(--muted);}
+  .legend{font-size:11.5px;}
+  .legend div{display:flex;align-items:center;gap:8px;margin-bottom:7px;}
+  .legend .sw{width:9px;height:9px;border-radius:2px;flex-shrink:0;}
+  .legend .txt{color:var(--muted);}
+  .legend b{color:var(--text);}
+
+  /* line/area chart mock */
+  .chart-svg{width:100%;height:150px;display:block;}
+  .axis-x{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:4px;}
+
+  /* bar chart mock */
+  .bar-chart{display:flex;align-items:flex-end;gap:6px;height:140px;padding-top:10px;}
+  .bar-chart .grp{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;}
+  .bar-chart .bars{display:flex;align-items:flex-end;gap:2px;height:110px;}
+  .bar-chart .bars i{width:7px;border-radius:2px 2px 0 0;display:block;}
+  .bar-chart .m{font-size:9px;color:var(--muted);margin-top:4px;}
+
+  /* MTD / performance list */
+  .kv{display:flex;justify-content:space-between;font-size:12.5px;padding:7px 0;border-bottom:1px solid var(--border);}
+  .kv:last-child{border-bottom:none;}
+  .kv span{color:var(--muted);}
+  .kv b{color:var(--text);}
+
+  /* table */
+  table{width:100%;border-collapse:collapse;font-size:12px;}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap;}
+  th{color:var(--muted);font-weight:500;font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;}
+  td.num{text-align:right;font-variant-numeric:tabular-nums;}
+  .status-dot{width:8px;height:8px;border-radius:50%;display:inline-block;}
+
+  /* pareto */
+  .pareto-row{display:flex;align-items:center;gap:10px;margin-bottom:10px;font-size:12px;}
+  .pareto-row .name{width:90px;color:var(--muted);flex-shrink:0;}
+  .pareto-row .track{flex:1;background:#1a2440;border-radius:4px;height:14px;position:relative;}
+  .pareto-row .fill{height:100%;border-radius:4px;background:var(--blue);}
+  .pareto-row .pct{width:100px;text-align:right;flex-shrink:0;color:var(--muted);}
+
+  /* heatmap */
+  .heatmap{display:grid;grid-template-columns:36px repeat(7,1fr);gap:3px;font-size:9.5px;}
+  .heatmap .hd{color:var(--muted);text-align:center;padding-bottom:4px;}
+  .heatmap .wk{color:var(--muted);display:flex;align-items:center;}
+  .heatmap .cell{height:20px;border-radius:3px;}
+
+  /* date range control */
+  .daterange{display:flex;gap:10px;align-items:center;background:var(--panel);border:1px solid var(--border);
+    border-radius:10px;padding:10px 14px;margin-bottom:18px;flex-wrap:wrap;}
+  .daterange .fld{display:flex;flex-direction:column;gap:3px;}
+  .daterange label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;}
+  .daterange input{background:var(--panel2);border:1px solid var(--border);color:var(--text);
+    border-radius:6px;padding:6px 10px;font-size:12.5px;}
+
+  .tab-content{display:none;}
+  .tab-content.active{display:block;}
+
+  .note{font-size:11px;color:var(--muted);margin-top:14px;}
+  .badge{display:inline-block;background:#1a2440;border:1px solid var(--border);border-radius:6px;
+    padding:2px 8px;font-size:10px;color:var(--cyan);margin-left:8px;}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="brand">
+      <div class="sun"></div>
+      <div><b>SOLAR CELL MFG</b><br><span>Production Dashboard</span></div>
+    </div>
+    <div class="nav">
+      <a class="nav-link active" data-tab="overview"><span class="ic">&#9679;</span> Overview</a>
+      <a class="nav-link" data-tab="production"><span class="ic">&#9633;</span> Production</a>
+      <a class="nav-link" data-tab="analytics"><span class="ic">&#9650;</span> Analytics</a>
+    </div>
+    <div class="sidebar-foot"><span class="dot"></span>All systems normal<br>Data source: MES · auto-refresh 5 min</div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+
+    <!-- TOP BAR (shared across tabs) -->
+    <div class="topbar">
+      <div class="titleblock">
+        <h1>SOLAR CELL MANUFACTURING DASHBOARD</h1>
+        <p>Final Product · Real-Time Production Monitoring — as of 15 May 2025</p>
+      </div>
+      <div class="controls">
+        <div class="pill"><span class="lbl">FY</span> Apr 2025 – Apr 2026</div>
+        <div class="pill"><span class="lbl">View</span> Month to Date</div>
+        <div class="pill"><span class="lbl">Refreshed</span> 10:30 AM</div>
+        <button class="btn ghost">&#8635; Refresh</button>
+        <button class="btn">&#9776; Filters</button>
+      </div>
+    </div>
+
+    <!-- ============ OVERVIEW TAB ============ -->
+    <div class="tab-content active" id="overview">
+
+      <div class="kpi-row">
+        <div class="kpi c1"><div class="lbl">Today's Production</div><div class="val">5.23 <span class="unit">MW</span></div><div class="delta" style="color:var(--green)">▲ 12.65% vs Yesterday</div></div>
+        <div class="kpi c2"><div class="lbl">MTD Production</div><div class="val">125.80 <span class="unit">MW</span></div><div class="delta" style="color:var(--green)">▲ 8.15% vs Last Month</div></div>
+        <div class="kpi c1"><div class="lbl">YTD Production</div><div class="val">685.42 <span class="unit">MW</span></div><div class="delta" style="color:var(--green)">▲ 15.62% vs Last Year</div></div>
+        <div class="kpi c2"><div class="lbl">Yield %</div><div class="val">93.42%</div><div class="delta" style="color:var(--green)">▲ 1.25% vs Last Month</div></div>
+        <div class="kpi c5"><div class="lbl">Reject %</div><div class="val">1.15%</div><div class="delta" style="color:var(--green)">▼ 0.32% vs Last Month</div></div>
+        <div class="kpi c6"><div class="lbl">Run Rate</div><div class="val">4.95 <span class="unit">MW/day</span></div><div class="delta" style="color:var(--amber)">▲ 0.28 vs Required</div></div>
+        <div class="kpi c7"><div class="lbl">Required Rate</div><div class="val">4.62 <span class="unit">MW/day</span></div><div class="delta">for Target</div></div>
+        <div class="kpi c8">
+          <div class="gauge"><span>85.30%</span></div>
+          <div><div class="lbl" style="margin-bottom:2px;">Plan Achievement</div><div style="font-size:11px;color:var(--muted);">vs current plan, day &amp; month</div></div>
+        </div>
+      </div>
+
+      <div class="grid g3">
+        <div class="panel">
+          <h3>Grade Wise Production <small>Nos.</small></h3>
+          <div class="donut-wrap">
+            <div class="donut" style="background:conic-gradient(var(--blue) 0% 92.4%, var(--green) 92.4% 93%, var(--amber) 93% 98.8%, var(--purple) 98.8% 100%);">
+              <div class="donut-label"><b>342,720</b><span>Total Nos.</span></div>
+            </div>
+            <div class="legend">
+              <div><span class="sw" style="background:var(--blue)"></span><span class="txt">A Grade</span> &nbsp;<b>92.40%</b></div>
+              <div><span class="sw" style="background:var(--green)"></span><span class="txt">B Grade</span> &nbsp;<b>0.60%</b></div>
+              <div><span class="sw" style="background:var(--amber)"></span><span class="txt">B-EL Grade</span> &nbsp;<b>5.80%</b></div>
+              <div><span class="sw" style="background:var(--purple)"></span><span class="txt">EB Grade</span> &nbsp;<b>1.20%</b></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h3>Grade Wise Production <small>MW</small></h3>
+          <div class="donut-wrap">
+            <div class="donut" style="background:conic-gradient(var(--blue) 0% 92.4%, var(--green) 92.4% 93%, var(--amber) 93% 98.8%, var(--purple) 98.8% 100%);">
+              <div class="donut-label"><b>5.03</b><span>Total MW</span></div>
+            </div>
+            <div class="legend">
+              <div><span class="sw" style="background:var(--blue)"></span><span class="txt">A Grade</span> &nbsp;<b>4.65 MW</b></div>
+              <div><span class="sw" style="background:var(--green)"></span><span class="txt">B Grade</span> &nbsp;<b>0.03 MW</b></div>
+              <div><span class="sw" style="background:var(--amber)"></span><span class="txt">B-EL Grade</span> &nbsp;<b>0.28 MW</b></div>
+              <div><span class="sw" style="background:var(--purple)"></span><span class="txt">EB Grade</span> &nbsp;<b>0.05 MW</b></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h3>Breakage Split <small>MW by type — legend shows cell count</small></h3>
+          <div class="donut-wrap">
+            <div class="donut" style="background:conic-gradient(var(--red) 0% 45.2%, var(--amber) 45.2% 70.3%, var(--blue) 70.3% 85.6%, var(--purple) 85.6% 96%, var(--cyan) 96% 100%);">
+              <div class="donut-label"><b>2.10</b><span>Total MW</span></div>
+            </div>
+            <div class="legend">
+              <div><span class="sw" style="background:var(--red)"></span><span class="txt">B-W Breakage</span> &nbsp;<b>0.95 MW</b> <span class="txt">· 1,842 cells</span></div>
+              <div><span class="sw" style="background:var(--amber)"></span><span class="txt">Cell Breakage</span> &nbsp;<b>0.53 MW</b> <span class="txt">· 1,027 cells</span></div>
+              <div><span class="sw" style="background:var(--blue)"></span><span class="txt">R-W Breakage</span> &nbsp;<b>0.32 MW</b> <span class="txt">· 620 cells</span></div>
+              <div><span class="sw" style="background:var(--purple)"></span><span class="txt">AL-W Breakage</span> &nbsp;<b>0.21 MW</b> <span class="txt">· 407 cells</span></div>
+              <div><span class="sw" style="background:var(--cyan)"></span><span class="txt">AG-W Breakage</span> &nbsp;<b>0.09 MW</b> <span class="txt">· 174 cells</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid g1-2">
+        <div class="panel">
+          <h3>Run Rate vs Required Rate <small>MW/day</small></h3>
+          <svg class="chart-svg" viewBox="0 0 400 130" preserveAspectRatio="none">
+            <line x1="0" y1="32" x2="400" y2="32" stroke="#233054" stroke-width="1"/>
+            <line x1="0" y1="65" x2="400" y2="65" stroke="#233054" stroke-width="1"/>
+            <line x1="0" y1="98" x2="400" y2="98" stroke="#233054" stroke-width="1"/>
+            <polyline points="0,70 40,55 80,58 120,50 160,52 200,44 240,46 280,38 320,40 360,30 400,28" fill="none" stroke="var(--green)" stroke-width="2.5"/>
+            <polyline points="0,85 40,82 80,80 120,78 160,76 200,74 240,72 280,70 320,68 360,66 400,64" fill="none" stroke="var(--amber)" stroke-width="2.5" stroke-dasharray="5,4"/>
+          </svg>
+          <div class="axis-x"><span>01 May</span><span>05 May</span><span>09 May</span><span>13 May</span><span>15 May</span></div>
+        </div>
+        <div class="panel">
+          <h3>MTD Summary</h3>
+          <div class="kv"><span>Total Production</span><b>125.80 MW</b></div>
+          <div class="kv"><span>A Grade Production</span><b>116.40 MW (92.40%)</b></div>
+          <div class="kv"><span>Total Rejection</span><b>1.45 MW (1.15%)</b></div>
+          <div class="kv"><span>Total Breakage</span><b>2.10 MW (1.67%)</b></div>
+          <div class="kv"><span>Yield %</span><b>93.42%</b></div>
+          <div class="kv"><span>Plan Achievement</span><b>85.30%</b></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Monthly Performance Summary <span class="badge">dates shown as "Jan 2025"</span></h3>
+        <table>
+          <thead><tr>
+            <th>Month</th><th>Plan MW</th><th>Actual MW</th><th>Achv %</th>
+            <th>A Grade %</th><th>Yield %</th><th>Reject %</th><th>Breakage %</th>
+            <th>Run Rate</th><th>Required Rate</th><th>Status</th>
+          </tr></thead>
+          <tbody>
+            <tr><td>Jan 2025</td><td class="num">120.00</td><td class="num">116.40</td><td class="num">97.00%</td><td class="num">94.67%</td><td class="num">92.10%</td><td class="num">1.25%</td><td class="num">1.45%</td><td class="num">3.88</td><td class="num">3.58</td><td><span class="status-dot" style="background:var(--green)"></span></td></tr>
+            <tr><td>Feb 2025</td><td class="num">125.00</td><td class="num">127.30</td><td class="num">101.80%</td><td class="num">92.78%</td><td class="num">92.80%</td><td class="num">1.10%</td><td class="num">1.60%</td><td class="num">4.55</td><td class="num">4.35</td><td><span class="status-dot" style="background:var(--green)"></span></td></tr>
+            <tr><td>Mar 2025</td><td class="num">130.00</td><td class="num">129.20</td><td class="num">99.40%</td><td class="num">92.81%</td><td class="num">93.00%</td><td class="num">0.98%</td><td class="num">1.40%</td><td class="num">4.17</td><td class="num">4.20</td><td><span class="status-dot" style="background:var(--amber)"></span></td></tr>
+            <tr><td>Apr 2025</td><td class="num">135.00</td><td class="num">133.60</td><td class="num">99.30%</td><td class="num">92.65%</td><td class="num">93.20%</td><td class="num">1.05%</td><td class="num">1.55%</td><td class="num">4.45</td><td class="num">4.38</td><td><span class="status-dot" style="background:var(--amber)"></span></td></tr>
+            <tr><td>May 2025</td><td class="num">150.00</td><td class="num">125.80</td><td class="num">85.30%</td><td class="num">92.45%</td><td class="num">93.42%</td><td class="num">1.15%</td><td class="num">1.67%</td><td class="num">4.95</td><td class="num">4.62</td><td><span class="status-dot" style="background:var(--red)"></span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ============ PRODUCTION TAB ============ -->
+    <div class="tab-content" id="production">
+
+      <div class="daterange">
+        <div class="fld"><label>From</label><input type="date" value="2025-04-01"></div>
+        <div class="fld"><label>To</label><input type="date" value="2025-05-15"></div>
+        <button class="btn" style="align-self:flex-end;">Apply Range</button>
+        <div class="pill" style="margin-left:auto;"><span class="lbl">FY default</span> Apr 2025 – Apr 2026</div>
+      </div>
+
+      <div class="grid g2">
+        <div class="panel">
+          <h3>Daily Production Trend <small>MW, selected range</small></h3>
+          <svg class="chart-svg" viewBox="0 0 400 130" preserveAspectRatio="none">
+            <line x1="0" y1="32" x2="400" y2="32" stroke="#233054"/><line x1="0" y1="65" x2="400" y2="65" stroke="#233054"/><line x1="0" y1="98" x2="400" y2="98" stroke="#233054"/>
+            <polyline points="0,110 30,60 60,75 90,55 120,68 150,50 180,72 210,45 240,60 270,40 300,58 330,35 360,50 400,30" fill="none" stroke="var(--blue)" stroke-width="2.5"/>
+          </svg>
+          <div class="axis-x"><span>01 Apr</span><span>15 Apr</span><span>01 May</span><span>15 May</span></div>
+        </div>
+        <div class="panel">
+          <h3>Yield Trend <small>%, selected range</small></h3>
+          <svg class="chart-svg" viewBox="0 0 400 130" preserveAspectRatio="none">
+            <line x1="0" y1="32" x2="400" y2="32" stroke="#233054"/><line x1="0" y1="65" x2="400" y2="65" stroke="#233054"/><line x1="0" y1="98" x2="400" y2="98" stroke="#233054"/>
+            <polyline points="0,50 30,48 60,52 90,46 120,50 150,44 180,48 210,42 240,46 270,40 300,44 330,38 360,42 400,36" fill="none" stroke="var(--cyan)" stroke-width="2.5"/>
+          </svg>
+          <div class="axis-x"><span>01 Apr</span><span>15 Apr</span><span>01 May</span><span>15 May</span></div>
+        </div>
+      </div>
+
+      <div class="grid g2">
+        <div class="panel">
+          <h3>Plan vs Actual <small>MW, selected range</small></h3>
+          <div class="bar-chart">
+            <div class="grp"><div class="bars"><i style="height:85px;background:#8892b0"></i><i style="height:78px;background:var(--blue)"></i></div><div class="m">Apr</div></div>
+            <div class="grp"><div class="bars"><i style="height:95px;background:#8892b0"></i><i style="height:81px;background:var(--blue)"></i></div><div class="m">May</div></div>
+            <div class="grp"><div class="bars"><i style="height:70px;background:#8892b0;opacity:.4"></i><i style="height:0;background:var(--blue);opacity:.4"></i></div><div class="m">Jun</div></div>
+            <div class="grp"><div class="bars"><i style="height:75px;background:#8892b0;opacity:.4"></i><i style="height:0;background:var(--blue);opacity:.4"></i></div><div class="m">Jul</div></div>
+          </div>
+        </div>
+        <div class="panel">
+          <h3>Rejection Trend <small>MW, by category, selected range</small></h3>
+          <svg class="chart-svg" viewBox="0 0 400 130" preserveAspectRatio="none">
+            <polygon points="0,120 30,90 60,100 90,80 120,95 150,75 180,92 210,70 240,88 270,65 300,85 330,60 360,80 400,55 400,130 0,130" fill="var(--red)" opacity="0.35"/>
+            <polygon points="0,120 30,105 60,110 90,95 120,105 150,90 180,102 210,85 240,98 270,80 300,95 330,75 360,90 400,68 400,130 0,130" fill="var(--amber)" opacity="0.35"/>
+            <polygon points="0,120 30,115 60,118 90,110 120,116 150,108 180,114 210,102 240,112 270,98 300,110 330,95 360,105 400,88 400,130 0,130" fill="var(--purple)" opacity="0.45"/>
+          </svg>
+          <div class="axis-x"><span>ER</span><span>FOR</span><span>ER(Q)</span></div>
+        </div>
+      </div>
+      <p class="note">All four charts above respond to the From/To range picker at the top of this tab.</p>
+    </div>
+
+    <!-- ============ ANALYTICS TAB ============ -->
+    <div class="tab-content" id="analytics">
+
+      <div class="daterange">
+        <div class="fld"><label>From</label><input type="date" value="2025-04-01"></div>
+        <div class="fld"><label>To</label><input type="date" value="2025-05-15"></div>
+        <button class="btn" style="align-self:flex-end;">Apply Range</button>
+      </div>
+
+      <div class="grid g2">
+        <div class="panel">
+          <h3>Breakage Pareto <small>MW, selected range</small></h3>
+          <div class="pareto-row"><div class="name">B-W Breakage</div><div class="track"><div class="fill" style="width:100%;background:var(--red)"></div></div><div class="pct">0.95 MW · 45.24%</div></div>
+          <div class="pareto-row"><div class="name">Cell Breakage</div><div class="track"><div class="fill" style="width:56%;background:var(--amber)"></div></div><div class="pct">0.53 MW · 25.24%</div></div>
+          <div class="pareto-row"><div class="name">R-W Breakage</div><div class="track"><div class="fill" style="width:34%;background:var(--blue)"></div></div><div class="pct">0.32 MW · 15.24%</div></div>
+          <div class="pareto-row"><div class="name">AL-W Breakage</div><div class="track"><div class="fill" style="width:22%;background:var(--purple)"></div></div><div class="pct">0.21 MW · 10.00%</div></div>
+          <div class="pareto-row"><div class="name">AG-W Breakage</div><div class="track"><div class="fill" style="width:9%;background:var(--cyan)"></div></div><div class="pct">0.09 MW · 4.29%</div></div>
+        </div>
+
+        <div class="panel">
+          <h3>Rejection Heatmap <small>MW by day of week, selected range</small></h3>
+          <div class="heatmap">
+            <div class="hd"></div><div class="hd">Mon</div><div class="hd">Tue</div><div class="hd">Wed</div><div class="hd">Thu</div><div class="hd">Fri</div><div class="hd">Sat</div><div class="hd">Sun</div>
+            <div class="wk">Wk15</div><div class="cell" style="background:#1a7d3a"></div><div class="cell" style="background:#2fa84e"></div><div class="cell" style="background:var(--amber)"></div><div class="cell" style="background:#2fa84e"></div><div class="cell" style="background:var(--red)"></div><div class="cell" style="background:#1a7d3a"></div><div class="cell" style="background:#1a7d3a"></div>
+            <div class="wk">Wk16</div><div class="cell" style="background:#2fa84e"></div><div class="cell" style="background:var(--red)"></div><div class="cell" style="background:var(--red)"></div><div class="cell" style="background:var(--amber)"></div><div class="cell" style="background:#2fa84e"></div><div class="cell" style="background:#1a7d3a"></div><div class="cell" style="background:#2fa84e"></div>
+            <div class="wk">Wk17</div><div class="cell" style="background:var(--amber)"></div><div class="cell" style="background:#2fa84e"></div><div class="cell" style="background:#1a7d3a"></div><div class="cell" style="background:var(--red)"></div><div class="cell" style="background:var(--amber)"></div><div class="cell" style="background:#2fa84e"></div><div class="cell" style="background:#1a7d3a"></div>
+            <div class="wk">Wk18</div><div class="cell" style="background:#1a7d3a"></div><div class="cell" style="background:var(--amber)"></div><div class="cell" style="background:#2fa84e"></div><div class="cell" style="background:#2fa84e"></div><div class="cell" style="background:var(--red)"></div><div class="cell" style="background:#1a7d3a"></div><div class="cell" style="background:#2fa84e"></div>
+            <div class="wk">Wk19</div><div class="cell" style="background:#2fa84e"></div><div class="cell" style="background:#1a7d3a"></div><div class="cell" style="background:var(--amber)"></div><div class="cell" style="background:#1a7d3a"></div><div class="cell" style="background:#2fa84e"></div><div class="cell" style="background:var(--amber)"></div><div class="cell" style="background:#1a7d3a"></div>
+          </div>
+        </div>
+      </div>
+      <p class="note">Both charts above respond to the From/To range picker at the top of this tab (independent of the Production tab's range).</p>
+    </div>
+
+  </div>
+</div>
+
+<script>
+document.querySelectorAll('.nav-link').forEach(function(link){
+  link.addEventListener('click', function(){
+    document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    this.classList.add('active');
+    document.getElementById(this.dataset.tab).classList.add('active');
+  });
+});
+</script>
+</body>
+</html>
