@@ -1,822 +1,820 @@
-import streamlit as st
+from pathlib import Path
+import datetime as dt
+import subprocess
+import sys
+import time
+
+import numpy as np
 import pandas as pd
-import plotly.express as px
-from calendar import monthrange
+import plotly.graph_objects as go
+import streamlit as st
 
-# --------------------------------------------------
-# Page Configuration
-# --------------------------------------------------
+from charts import COL, donut, lines, pareto, production, run_rate_chart, ticks
+from components import empty, kpi
+from data_loader import load_all
+from metrics import delta, fy_start, plan_for, previous_row, safe_sum
+from styles import CSS
+from validation import validate_dataset
+
+
 st.set_page_config(
-    page_title="Solar Dashboard",
-    layout="wide"
+    page_title="Solar Cell Manufacturing Dashboard",
+    page_icon="☀️",
+    layout="wide",
+    initial_sidebar_state="expanded",
 )
 
-# --------------------------------------------------
-# Header
-# --------------------------------------------------
-st.markdown("""
-<div style="
-background:#1565C0;
-padding:20px;
-border-radius:15px;
-text-align:center;
-color:#ffffff;">
-<h1>☀ RENEW CELL LINE PRODUCTION DASHBOARD - PERC TECHNOLOGY</h1>
-</div>
-""", unsafe_allow_html=True)
+APP_DIR = Path(__file__).resolve().parent
+DATA_DIR = Path(r"C:\Users\vijaya.kalyani\Downloads\Dashboard\database")
+SAP_REFRESH_SCRIPT = APP_DIR / "sap_refresh.vbs"
+SAP_REPORT_FILES = [
+    "Daywise Data.xlsx",
+    "Daywise MW Report.xlsx",
+    "Monthwise MW Report.xlsx",
+    "Monthwise Report.xlsx",
+]
 
-# --------------------------------------------------
-# CSS Styling
-# --------------------------------------------------
-st.markdown("""
-<style>
-
-h1 {
-    font-size: 42px !important;
-    font-weight: bold !important;
+PLOT_CONFIG = {
+    "displaylogo": False,
+    "responsive": True,
+    "scrollZoom": True,
+    "modeBarButtonsToRemove": ["lasso2d", "select2d"],
 }
 
-h3 {
-    font-size: 40px !important;
-    font-weight: bold !important;
-    color:#1565C0;
+ADDITIVE_FIELDS = {
+    "a_cells",
+    "b_cells",
+    "bel_cells",
+    "eb_cells",
+    "total_cells",
+    "a_mw",
+    "b_mw",
+    "bel_mw",
+    "eb_mw",
+    "total_mw",
+    "er_rejection",
+    "for_rejection",
+    "erq_rejection",
+    "total_rejection",
+    "rw_breakage",
+    "bw_breakage",
+    "alw_breakage",
+    "agw_breakage",
+    "cell_breakage",
+    "total_breakage",
 }
 
-[data-testid="stMetricValue"] {
-    font-size: 48px !important;
-    font-weight: bold !important;
-    color: #1565C0;
+PERCENTAGE_FIELDS = {
+    "a_yield_pct",
+    "b_yield_pct",
+    "bel_yield_pct",
+    "eb_yield_pct",
+    "er_pct",
+    "for_pct",
+    "breakage_pct",
 }
 
-[data-testid="stMetricLabel"] {
-    font-size: 30px !important;
-    font-weight: bold !important;
-}
+st.markdown(CSS, unsafe_allow_html=True)
 
-div[data-testid="stMetric"] {
-    background:white;
-    border-left:6px solid #1565C0;
-    padding:20px;
-    min-height:130px;
-    border-radius:15px;
-    border-top:1px solid #D6D6D6;
-    border-right:1px solid #D6D6D6;
-    border-bottom:1px solid #D6D6D6;
-    text-align:center;
-}
 
-section[data-testid="stSidebar"] {
-    width: 320px !important;
-}
+@st.cache_data(show_spinner="Reading production workbooks...")
+def cached_load(app_directory: str, workbook_stamp: tuple):
+    del workbook_stamp
+    return load_all(Path(app_directory))
 
-</style>
-""", unsafe_allow_html=True)
-def kpi_card(title, value, color="#1565C0"):
-    st.markdown(
-        f"""
-        <div style="
-            background:white;
-            border-left:8px solid {color};
-            border-radius:16px;
-            padding:22px;
-            min-height:120px;
-            box-shadow:0 2px 8px rgba(0,0,0,0.12);
-            display:flex;
-            flex-direction:column;
-            justify-content:center;
-            align-items:center;
-            text-align:center;
-        ">
-            <div style="
-                font-size:28px;
-                font-weight:700;
-                color:#333333;
-                margin-bottom:12px;
-            ">
-                {title}
-            </div>
-            <div style="
-                font-size:46px;
-                font-weight:800;
-                color:{color};
-            ">
-                {value}
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True
+
+def refresh_sap_reports():
+    """Run the local SAP GUI export script and validate its four outputs."""
+    if sys.platform != "win32":
+        return False, "SAP refresh can run only on the Windows computer where SAP GUI is installed."
+
+    if not SAP_REFRESH_SCRIPT.exists():
+        return False, f"SAP refresh script was not found:\n{SAP_REFRESH_SCRIPT}"
+
+    try:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        return False, f"Could not create the data directory:\n{DATA_DIR}\n\n{exc}"
+
+    try:
+        result = subprocess.run(
+            [
+                "cscript.exe",
+                "//nologo",
+                str(SAP_REFRESH_SCRIPT),
+                str(DATA_DIR),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=600,
+            check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except subprocess.TimeoutExpired:
+        return False, (
+            "SAP export timed out after 10 minutes. Check SAP for an open "
+            "popup, warning, selection screen, or export dialog."
+        )
+    except FileNotFoundError:
+        return False, "Windows Script Host could not be started. cscript.exe was not found."
+    except Exception as exc:
+        return False, f"Could not start the SAP refresh process:\n{exc}"
+
+    output = "\n".join(
+        value.strip()
+        for value in (result.stdout, result.stderr)
+        if value and value.strip()
     )
+    if result.returncode != 0:
+        return False, output or f"SAP refresh failed with exit code {result.returncode}."
 
-# --------------------------------------------------
-# File Upload Section
-# --------------------------------------------------
-st.sidebar.markdown("### Upload Files")
+    # Allow Excel and Windows a moment to finish writing and release the files.
+    time.sleep(2)
+    missing = []
+    empty_files = []
+    for file_name in SAP_REPORT_FILES:
+        file_path = DATA_DIR / file_name
+        if not file_path.exists():
+            missing.append(file_name)
+        elif file_path.stat().st_size == 0:
+            empty_files.append(file_name)
 
-mw_file = st.sidebar.file_uploader(
-    "Upload MW Report",
-    type=["xlsx"]
-)
+    if missing:
+        return False, "SAP completed, but these files were not created:\n" + "\n".join(
+            f"• {name}" for name in missing
+        )
+    if empty_files:
+        return False, "SAP created empty files:\n" + "\n".join(
+            f"• {name}" for name in empty_files
+        )
 
-plan_file = st.sidebar.file_uploader(
-    "Upload Plan File",
-    type=["xlsx"]
-)
+    return True, output or "All four SAP reports were exported successfully."
 
-daywise_file = st.sidebar.file_uploader(
-    "Upload Daywise File",
-    type=["xlsx"]
-)
-def apply_chart_style(fig, height=500):
-    fig.update_layout(
-        height=height,
-        title_font_size=34,
-        font=dict(size=28),
-        xaxis_title_font=dict(size=24),
-        yaxis_title_font=dict(size=24),
-        xaxis=dict(
-            tickfont=dict(size=18)
-        ),
-        yaxis=dict(
-            tickfont=dict(size=18)
-        ),
-        legend=dict(
-            font=dict(size=20)
-        ),
-        hoverlabel=dict(
-            bgcolor="white",
-            font_size=22,
-            font_family="Arial",
-            font_color="black"
-        ),
-        margin=dict(l=40, r=40, t=80, b=60)
-    )
-    return fig
-# --------------------------------------------------
-# Read Uploaded Files
-# --------------------------------------------------
-if mw_file and plan_file and daywise_file:
-    st.sidebar.success("Files Uploaded Successfully")
 
-    mw = pd.read_excel(mw_file)
-    plan = pd.read_excel(plan_file)
-    daywise = pd.read_excel(daywise_file)
-
-    # Clean column names
-    mw.columns = mw.columns.str.strip()
-    plan.columns = plan.columns.str.strip()
-    daywise.columns = daywise.columns.str.strip()
-
-else:
-    st.info("Please upload all files to view the dashboard")
-    st.stop()
-
-# --------------------------------------------------
-# Required Column Validation
-# --------------------------------------------------
-required_mw_columns = [
-    "DATE",
-    "A-GRADE SALEABLE",
-    "B-GRADE SALEABLE",
-    "B-EL GRADE SALEABLE",
-    "EB GRADE SALEABLE",
-    "TOTAL PRODUCTION",
-    "A-GRADE SALEABLE(MW)",
-    "B-GRADE SALEABLE(MW)",
-    "B-EL GRADE SALEABLE(MW)",
-    "EB GRADE SALEABLE(MW)",
-    "TOTAL PRODUCTION(MW)"
-]
-
-required_daywise_columns = [
-    "DATE",
-    "A-GRADE",
-    "B-GRADE",
-    "B-EL GRADE",
-    "EB GRADE",
-    "TOTAL PRODUCTION",
-    "TOTAL REJECTION",
-    "TOTAL BREAKAGES",
-    "R-W BREAKAGE",
-    "B-W BREAKAGE",
-    "AL-W BREAKAGE",
-    "AG-W BREAKAGE",
-    "CELL BREAKAGE",
-    "A-GRADE YIELD(%)"
-]
-
-required_plan_columns = [
-    "Month",
-    "Total Target"
-]
-
-missing_mw = [col for col in required_mw_columns if col not in mw.columns]
-missing_daywise = [col for col in required_daywise_columns if col not in daywise.columns]
-missing_plan = [col for col in required_plan_columns if col not in plan.columns]
-
-if missing_mw:
-    st.error("Wrong MW Report uploaded or missing columns:")
-    st.write(missing_mw)
-    st.write("Available MW columns:")
-    st.write(list(mw.columns))
-    st.stop()
-
-if missing_daywise:
-    st.error("Wrong Daywise Data file uploaded or missing columns:")
-    st.write(missing_daywise)
-    st.write("Available Daywise columns:")
-    st.write(list(daywise.columns))
-    st.stop()
-
-if missing_plan:
-    st.error("Wrong Plan file uploaded or missing columns:")
-    st.write(missing_plan)
-    st.write("Available Plan columns:")
-    st.write(list(plan.columns))
-    st.stop()
-
-# --------------------------------------------------
-# Date Conversion
-# --------------------------------------------------
-mw["DATE"] = pd.to_datetime(mw["DATE"])
-daywise["DATE"] = pd.to_datetime(daywise["DATE"])
-plan["Month"] = pd.to_datetime(plan["Month"])
-
-# --------------------------------------------------
-# Financial Year Function
-# --------------------------------------------------
-def get_fy(date):
-    if date.month >= 4:
-        return f"FY {date.year}-{str(date.year + 1)[-2:]}"
-    else:
-        return f"FY {date.year - 1}-{str(date.year)[-2:]}"
-
-mw["FY"] = mw["DATE"].apply(get_fy)
-daywise["FY"] = daywise["DATE"].apply(get_fy)
-
-# --------------------------------------------------
-# Sidebar Filters
-# --------------------------------------------------
-st.sidebar.markdown("## Filters")
-
-fy_list = sorted(
-    mw["FY"].unique(),
-    reverse=True
-)
-
-selected_fy = st.sidebar.selectbox(
-    "Financial Year",
-    fy_list
-)
-
-year_list = sorted(
-    mw["DATE"].dt.year.unique()
-)
-
-selected_year = st.sidebar.selectbox(
-    "Select Year",
-    year_list,
-    index=len(year_list) - 1
-)
-
-month_list = [
-    "All",
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
-]
-
-month_dict = {
-    "Jan": 1,
-    "Feb": 2,
-    "Mar": 3,
-    "Apr": 4,
-    "May": 5,
-    "Jun": 6,
-    "Jul": 7,
-    "Aug": 8,
-    "Sep": 9,
-    "Oct": 10,
-    "Nov": 11,
-    "Dec": 12
-}
-
-selected_month = st.sidebar.selectbox(
-    "Select Month",
-    month_list
-)
-
-# --------------------------------------------------
-# Calendar Date Range Filter
-# --------------------------------------------------
-st.sidebar.subheader("📅 Date Range")
-
-date_range = st.sidebar.date_input(
-    "Select From Date and To Date",
-    value=(
-        mw["DATE"].min().date(),
-        mw["DATE"].max().date()
+workbook_stamp = tuple(
+    sorted(
+        (path.name, path.stat().st_mtime_ns, path.stat().st_size)
+        for path in DATA_DIR.glob("*.xlsx")
     )
 )
 
-if isinstance(date_range, tuple) and len(date_range) == 2:
-    start_date, end_date = date_range
-else:
-    start_date = date_range
-    end_date = date_range
-
-# --------------------------------------------------
-# Filter MW Data
-# --------------------------------------------------
-filtered_mw = mw.copy()
-
-filtered_mw = filtered_mw[
-    filtered_mw["FY"] == selected_fy
-]
-
-filtered_mw = filtered_mw[
-    filtered_mw["DATE"].dt.year == selected_year
-]
-
-if selected_month != "All":
-    filtered_mw = filtered_mw[
-        filtered_mw["DATE"].dt.month == month_dict[selected_month]
-    ]
-
-filtered_mw = filtered_mw[
-    (filtered_mw["DATE"].dt.date >= start_date) &
-    (filtered_mw["DATE"].dt.date <= end_date)
-]
-
-# --------------------------------------------------
-# Filter Daywise Data
-# --------------------------------------------------
-filtered_daywise = daywise.copy()
-
-filtered_daywise = filtered_daywise[
-    filtered_daywise["FY"] == selected_fy
-]
-
-filtered_daywise = filtered_daywise[
-    filtered_daywise["DATE"].dt.year == selected_year
-]
-
-if selected_month != "All":
-    filtered_daywise = filtered_daywise[
-        filtered_daywise["DATE"].dt.month == month_dict[selected_month]
-    ]
-
-filtered_daywise = filtered_daywise[
-    (filtered_daywise["DATE"].dt.date >= start_date) &
-    (filtered_daywise["DATE"].dt.date <= end_date)
-]
-
-# --------------------------------------------------
-# Empty Data Check
-# --------------------------------------------------
-if filtered_mw.empty:
-    st.warning("No MW data available for selected filters")
-    st.stop()
-
-if filtered_daywise.empty:
-    st.warning("No Daywise data available for selected filters")
-    st.stop()
-
-# --------------------------------------------------
-# Latest Records
-# --------------------------------------------------
-latest = filtered_mw.iloc[-1]
-latest_date = filtered_mw["DATE"].max()
-
-# --------------------------------------------------
-# Filter Info
-# --------------------------------------------------
-st.markdown(
-    f"""
-    <div style='text-align:right;
-                color:gray;
-                font-size:16px'>
-    FY: {selected_fy} | Year: {selected_year} | Month: {selected_month} | Period: {start_date} to {end_date}
-    </div>
-    """,
-    unsafe_allow_html=True
+sources, load_errors = cached_load(
+    str(DATA_DIR),
+    workbook_stamp,
 )
 
-# --------------------------------------------------
-# Production Calculations
-# --------------------------------------------------
-mtd_data = mw[
-    (mw["DATE"].dt.year == latest_date.year) &
-    (mw["DATE"].dt.month == latest_date.month)
-]
 
-mtd_mw = mtd_data["TOTAL PRODUCTION(MW)"].sum()
+# -----------------------------------------------------------------------------
+# Shared helpers
+# -----------------------------------------------------------------------------
+def date_filter(df, start_date, end_date):
+    if df is None or df.empty:
+        return df
 
-ytd_data = mw[
-    mw["FY"] == selected_fy
-]
+    mask = (
+        (df["period"].dt.date >= start_date)
+        & (df["period"].dt.date <= end_date)
+    )
+    return df.loc[mask].copy()
 
-ytd_mw = ytd_data["TOTAL PRODUCTION(MW)"].sum()
 
-# --------------------------------------------------
-# Plan Calculations
-# --------------------------------------------------
-current_month_plan = plan[
-    (plan["Month"].dt.month == latest_date.month) &
-    (plan["Month"].dt.year == latest_date.year)
-]
+def view_grain(view):
+    return {
+        "Daily": "day",
+        "Weekly": "week",
+        "Monthly": "month",
+    }[view]
 
-current_plan = current_month_plan["Total Target"].sum()
 
-if current_plan > 0:
-    achievement = (mtd_mw / current_plan) * 100
-else:
-    achievement = 0
+def displayed_ticks(fig, df, view):
+    if df is None or df.empty:
+        return fig
 
-# --------------------------------------------------
-# Run Rate / Required Rate
-# --------------------------------------------------
-days_completed = filtered_mw["DATE"].dt.day.max()
+    return ticks(
+        fig,
+        df["period"],
+        view_grain(view),
+        max_visible_ticks=16,
+    )
 
-if days_completed > 0:
-    run_rate = mtd_mw / days_completed
-else:
-    run_rate = 0
 
-days_in_month = monthrange(
-    latest_date.year,
-    latest_date.month
-)[1]
+def aggregate(df, view):
+    """Aggregate additive fields and volume-weight percentage fields."""
+    if df is None or df.empty:
+        return df
 
-days_remaining = days_in_month - days_completed
+    if view == "Daily":
+        return df.copy()
 
-if days_remaining > 0:
-    required_rate = (current_plan - mtd_mw) / days_remaining
-else:
-    required_rate = 0
+    frequency = "W-MON" if view == "Weekly" else "MS"
+    indexed = df.set_index("period").sort_index()
+    result_parts = []
 
-# --------------------------------------------------
-# Quality Calculations
-# --------------------------------------------------
-total_production = filtered_daywise["TOTAL PRODUCTION"].sum()
-total_rejection = filtered_daywise["TOTAL REJECTION"].sum()
-total_breakage = filtered_daywise["TOTAL BREAKAGES"].sum()
-
-total_input = (
-    total_production +
-    total_rejection +
-    total_breakage
-)
-
-if total_input > 0:
-    yield_pct = (total_production / total_input) * 100
-    rejection_pct = (total_rejection / total_input) * 100
-    breakage_pct = (total_breakage / total_input) * 100
-else:
-    yield_pct = 0
-    rejection_pct = 0
-    breakage_pct = 0
-
-# --------------------------------------------------
-# Production KPIs
-# --------------------------------------------------
-st.markdown("---")
-st.subheader("Production KPIs")
-
-col1, col2, col3, col4 = st.columns(4)
-
-with col1:
-    kpi_card("MTD Production", f"{mtd_mw:.2f} MW", "#1565C0")
-
-with col2:
-    kpi_card("FYTD Production", f"{ytd_mw:.2f} MW", "#2E7D32")
-
-with col3:
-    kpi_card("Today's Production", f"{latest['TOTAL PRODUCTION(MW)']:.2f} MW", "#EF6C00")
-
-with col4:
-    kpi_card("Total Qty", f"{latest['TOTAL PRODUCTION']:,.0f}", "#6A1B9A")
-
-col5, col6, col7, col8 = st.columns(4)
-
-with col5:
-    kpi_card("A Grade MW", f"{latest['A-GRADE SALEABLE(MW)']:.2f}", "#1B5E20")
-
-with col6:
-    kpi_card("B Grade MW", f"{latest['B-GRADE SALEABLE(MW)']:.2f}", "#0277BD")
-
-with col7:
-    kpi_card("BEL Grade MW", f"{latest['B-EL GRADE SALEABLE(MW)']:.2f}", "#F9A825")
-
-with col8:
-    kpi_card("EB Grade MW", f"{latest['EB GRADE SALEABLE(MW)']:.2f}", "#C62828")
-
-col9, col10, col11, col12 = st.columns(4)
-
-with col9:
-    kpi_card("A Grade Qty", f"{latest['A-GRADE SALEABLE']:,.0f}", "#1B5E20")
-
-with col10:
-    kpi_card("B Grade Qty", f"{latest['B-GRADE SALEABLE']:,.0f}", "#0277BD")
-with col11:
-    kpi_card("BEL Grade Qty", f"{latest['B-EL GRADE SALEABLE']:,.0f}", "#F9A825")
-with col12:
-    kpi_card("EB Grade Qty", f"{latest['EB GRADE SALEABLE']:,.0f}", "#C62828")
-
-# --------------------------------------------------
-# Planning KPIs
-# --------------------------------------------------
-st.markdown("---")
-st.subheader("Planning KPIs")
-
-col13, col14, col15 = st.columns(3)
-
-with col13:
-    kpi_card("Plan MW", f"{current_plan:.2f}", "#1565C0")
-
-with col14:
-    kpi_card("Actual MW", f"{mtd_mw:.2f}", "#2E7D32")
-
-with col15:
-    kpi_card("Achievement %", f"{achievement:.2f}%", "#EF6C00")
-
-col16, col17 = st.columns(2)
-
-with col16:
-    kpi_card("Run Rate", f"{run_rate:.2f} MW/day", "#00838F")
-
-with col17:
-    kpi_card("Required Rate", f"{required_rate:.2f} MW/day", "#C50F5E")
-
-# --------------------------------------------------
-# Quality KPIs
-# --------------------------------------------------
-st.markdown("---")
-st.subheader("Quality KPIs")
-
-col18, col19, col20 = st.columns(3)
-
-col18.metric("Yield %", f"{yield_pct:.2f}%")
-col19.metric("Reject %", f"{rejection_pct:.2f}%")
-col20.metric("Breakage %", f"{breakage_pct:.2f}%")
-
-# --------------------------------------------------
-# Grade Mix Analysis
-# --------------------------------------------------
-st.markdown("---")
-st.subheader("Grade Mix Analysis")
-
-left, right = st.columns(2)
-
-grade_mw = pd.DataFrame({
-    "Grade": ["A Grade", "B Grade", "BEL Grade", "EB Grade"],
-    "MW": [
-        filtered_mw["A-GRADE SALEABLE(MW)"].sum(),
-        filtered_mw["B-GRADE SALEABLE(MW)"].sum(),
-        filtered_mw["B-EL GRADE SALEABLE(MW)"].sum(),
-        filtered_mw["EB GRADE SALEABLE(MW)"].sum()
+    additive_columns = [
+        column
+        for column in indexed.columns
+        if column in ADDITIVE_FIELDS
     ]
-})
 
-fig = px.pie(
-    grade_mw,
-    values="MW",
-    names="Grade",
-    hole=0.6,
-    title="Grade-wise Production MW"
-)
+    if additive_columns:
+        summed = (
+            indexed[additive_columns]
+            .resample(frequency)
+            .sum(min_count=1)
+        )
+        result_parts.append(summed)
 
-fig = apply_chart_style(fig, height=500)
+    percentage_columns = [
+        column
+        for column in indexed.columns
+        if column in PERCENTAGE_FIELDS
+    ]
+
+    if percentage_columns:
+        if "total_cells" in indexed.columns:
+            weights = indexed["total_cells"].where(
+                indexed["total_cells"] > 0
+            )
+            total_weight = weights.resample(frequency).sum(min_count=1)
+            weighted_values = {}
+
+            for column in percentage_columns:
+                weighted_sum = (
+                    indexed[column]
+                    .mul(weights)
+                    .resample(frequency)
+                    .sum(min_count=1)
+                )
+                weighted_values[column] = weighted_sum.div(total_weight)
+
+            percentages = pd.DataFrame(weighted_values)
+        else:
+            percentages = (
+                indexed[percentage_columns]
+                .resample(frequency)
+                .mean()
+            )
+
+        result_parts.append(percentages)
+
+    if not result_parts:
+        return pd.DataFrame(columns=["period"])
+
+    result = pd.concat(result_parts, axis=1)
+    result = result.loc[:, ~result.columns.duplicated()]
+    result = result.dropna(how="all")
+    return result.reset_index()
 
 
-with left:
+def comparison_tone(current, reference, higher_is_better=True):
+    if current is None or reference is None or pd.isna(current) or pd.isna(reference): return "neutral"
+    if np.isclose(current, reference): return "neutral"
+    favorable = current > reference if higher_is_better else current < reference
+    return "positive" if favorable else "negative"
+
+def achievement_tone(value):
+    if value is None or pd.isna(value): return "neutral"
+    if value >= 100: return "positive"
+    if value >= 90: return "warning"
+    return "negative"
+
+def validated_date_range(key_prefix, minimum_date, maximum_date, default_start, default_end, view_options=("Daily","Weekly","Monthly")):
+    a,b,c=st.columns([1,1,1]); start_key=f"{key_prefix}_start"; end_key=f"{key_prefix}_end"
+    start=a.date_input("Start Date",value=default_start,min_value=minimum_date,max_value=maximum_date,key=start_key,format="DD/MM/YYYY")
+    if end_key in st.session_state and st.session_state[end_key] < start: st.session_state[end_key]=start
+    end=b.date_input("End Date",value=max(default_end,start),min_value=start,max_value=maximum_date,key=end_key,format="DD/MM/YYYY")
+    view=c.selectbox("View",list(view_options),key=f"{key_prefix}_view")
+    if start > end:
+        st.error("Invalid date range: Start Date cannot be later than End Date."); return None,None,None,False
+    return start,end,view,True
+
+def overview_run_data(daily, month_start, as_of_date, target):
+    data=daily[(daily.period>=month_start)&(daily.period<=as_of_date)].sort_values("period").copy()
+    data["cumulative_mw"]=data["total_mw"].fillna(0).cumsum(); data["run_rate"]=data["cumulative_mw"]/np.arange(1,len(data)+1)
+    required=[]
+    for _,r in data.iterrows():
+        remaining=max(target-r["cumulative_mw"],0); days=max(pd.Period(r["period"],freq="M").days_in_month-r["period"].day,1); required.append(remaining/days)
+    return data,pd.Series(required,index=data.index)
+
+def selected_run_data(raw_daily, selected, plan_data, view):
+    data=selected.sort_values("period").copy()
+    if view=="Daily": data["run_rate"]=data["total_mw"]
+    elif view=="Weekly": data["run_rate"]=data["total_mw"]/7
+    else: data["run_rate"]=data["total_mw"]/data["period"].dt.days_in_month
+    required=[]
+    for _,r in data.iterrows():
+        target=plan_for(plan_data,r["period"])
+        if target is None: required.append(np.nan); continue
+        m0=r["period"].replace(day=1); prior=raw_daily.loc[(raw_daily.period>=m0)&(raw_daily.period<r["period"]),"total_mw"].sum(); days=max(pd.Period(r["period"],freq="M").days_in_month-r["period"].day+1,1)
+        required.append(max(target-prior,0)/days)
+    return data,pd.Series(required,index=data.index)
+
+def application_header(as_of_date):
+    title_column, date_column = st.columns([4, 1])
+
+    with title_column:
+        st.markdown("## ☀️ SOLAR CELL MANUFACTURING DASHBOARD")
+        st.caption("Final Product · Real-Time Production Monitoring")
+
+    with date_column:
+        st.markdown(
+            f'<div class="asof">AS OF: {as_of_date:%d-%b-%Y}</div>',
+            unsafe_allow_html=True,
+        )
+
+
+def plot(fig):
     st.plotly_chart(
         fig,
-        use_container_width=True
+        use_container_width=True,
+        config=PLOT_CONFIG,
     )
 
-grade_qty = pd.DataFrame({
-    "Grade": ["A Grade", "B Grade", "BEL Grade", "EB Grade"],
-    "Qty": [
-        filtered_mw["A-GRADE SALEABLE"].sum(),
-        filtered_mw["B-GRADE SALEABLE"].sum(),
-        filtered_mw["B-EL GRADE SALEABLE"].sum(),
-        filtered_mw["EB GRADE SALEABLE"].sum()
-    ]
-})
 
-fig_qty = px.pie(
-    grade_qty,
-    values="Qty",
-    names="Grade",
-    hole=0.6,
-    title="Grade-wise Production Qty"
+# -----------------------------------------------------------------------------
+# Sidebar
+# -----------------------------------------------------------------------------
+st.sidebar.markdown("## ☀️ Solar Cell MES")
+page = st.sidebar.radio(
+    "Navigation",
+    ["Overview", "Production", "Analytics"],
+    label_visibility="collapsed",
 )
 
-fig_qty = apply_chart_style(fig_qty, height=500)
+st.sidebar.divider()
 
-with right:
-    st.plotly_chart(
-        fig_qty,
-        use_container_width=True
-    )
-
-# --------------------------------------------------
-# Production Trend
-# --------------------------------------------------
-st.markdown("---")
-st.subheader("Production Trend")
-
-fig2 = px.area(
-    filtered_mw,
-    x="DATE",
-    y="TOTAL PRODUCTION(MW)",
-    markers=True,
-    title="Daily Production Trend (MW)"
-)
-
-fig2.update_traces(
-    hovertemplate="<b>Date:</b> %{x}<br><b>Production:</b> %{y:.2f} MW<extra></extra>"
-)
-fig2 = apply_chart_style(fig2, height=550)
-
-st.plotly_chart(
-    fig2,
-    use_container_width=True
-)
-
-# --------------------------------------------------
-# Planning Analysis
-# --------------------------------------------------
-st.markdown("---")
-st.subheader("Planning Analysis")
-
-plan_actual = pd.DataFrame({
-    "Type": ["Plan", "Actual"],
-    "MW": [current_plan, mtd_mw]
-})
-
-fig_plan = px.bar(
-    plan_actual,
-    x="Type",
-    y="MW",
-    color="Type",
-    title="Plan vs Actual",
-    text="MW",
-    hover_data={
-        "Type": True,
-        "MW": ":.2f"
-    }
-)
-
-fig_plan.update_traces(
-    texttemplate="%{text:.2f}",
-    textposition="outside",
-    marker_line_width=1.5
-)
-
-fig_plan = apply_chart_style(fig_plan, height=550)
-
-st.plotly_chart(
-    fig_plan,
-    use_container_width=True
-)
-# --------------------------------------------------
-# Monthly Plan vs Actual
-# --------------------------------------------------
-st.markdown("---")
-st.subheader("Monthly Plan vs Actual")
-
-mw_monthly = mw.copy()
-mw_monthly["Month_Key"] = mw_monthly["DATE"].dt.to_period("M").astype(str)
-
-actual_monthly = (
-    mw_monthly
-    .groupby("Month_Key")["TOTAL PRODUCTION(MW)"]
-    .sum()
-    .reset_index()
-)
-
-plan_monthly = plan.copy()
-plan_monthly["Month_Key"] = plan_monthly["Month"].dt.to_period("M").astype(str)
-
-plan_monthly = plan_monthly[
-    ["Month_Key", "Total Target"]
+SOURCE_LABELS = [
+    ("day_quality", "Daywise Data"),
+    ("day_mw", "Daywise MW Report"),
+    ("month_mw", "Monthwise MW Report"),
+    ("month_quality", "Monthwise Report"),
+    ("plan", "Plan"),
 ]
 
-plan_actual_monthly = plan_monthly.merge(
-    actual_monthly,
-    on="Month_Key",
-    how="left"
+for role, label in SOURCE_LABELS:
+    status = "🟢" if role in sources else "🔴"
+    st.sidebar.markdown(f"{status} {label}")
+
+st.sidebar.divider()
+st.sidebar.markdown("### SAP Data Refresh")
+st.sidebar.caption("Open SAP GUI and log in before starting the refresh.")
+
+refresh_clicked = st.sidebar.button(
+    "↻ Refresh SAP Data",
+    use_container_width=True,
+    type="primary",
+    help="Export fresh operational reports from SAP and reload the dashboard.",
 )
 
-plan_actual_monthly["TOTAL PRODUCTION(MW)"] = plan_actual_monthly[
-    "TOTAL PRODUCTION(MW)"
-].fillna(0)
+if refresh_clicked:
+    with st.spinner(
+        "Exporting fresh reports from SAP. Do not use SAP or Excel until this finishes..."
+    ):
+        refresh_success, refresh_message = refresh_sap_reports()
 
-plan_actual_monthly["Achievement %"] = (
-    plan_actual_monthly["TOTAL PRODUCTION(MW)"] /
-    plan_actual_monthly["Total Target"]
-) * 100
+    if refresh_success:
+        st.cache_data.clear()
+        st.session_state["sap_refresh_success"] = (
+            "SAP data refreshed successfully at "
+            f"{dt.datetime.now():%d-%b-%Y %I:%M:%S %p}."
+        )
+        st.session_state["sap_refresh_details"] = refresh_message
+        st.rerun()
+    else:
+        st.sidebar.error("SAP refresh failed.")
+        with st.sidebar.expander("View refresh error", expanded=True):
+            st.code(refresh_message, language=None)
 
-fig_plan_monthly = px.bar(
-    plan_actual_monthly,
-    x="Month_Key",
-    y=["Total Target", "TOTAL PRODUCTION(MW)"],
-    barmode="group",
-    title="Monthly Plan vs Actual",
-    text_auto=".2f"
+if "sap_refresh_success" in st.session_state:
+    st.sidebar.success(st.session_state.pop("sap_refresh_success"))
+    refresh_details = st.session_state.pop("sap_refresh_details", None)
+    if refresh_details:
+        with st.sidebar.expander("Refresh details", expanded=False):
+            st.text(refresh_details)
+
+latest_file_refresh = max(
+    (path.stat().st_mtime for path in DATA_DIR.glob("*.xlsx")),
+    default=None,
+)
+if latest_file_refresh is not None:
+    st.sidebar.caption(
+        "Latest data file: "
+        + dt.datetime.fromtimestamp(latest_file_refresh).strftime(
+            "%d-%b-%Y %I:%M:%S %p"
+        )
+    )
+else:
+    st.sidebar.caption("Latest data file: unavailable")
+
+with st.sidebar.expander("Diagnostics", expanded=False):
+    for error in load_errors:
+        st.warning(error)
+
+    for role, item in sources.items():
+        st.markdown(
+            f"**{item['file']}** — "
+            f"{len(item['data']):,} rows, "
+            f"header row {item['header_row']}"
+        )
+
+        issues = validate_dataset(item)
+        if issues:
+            for issue in issues:
+                st.warning(issue)
+        else:
+            st.success("No validation warnings.")
+
+        st.json(item["mapping"])
+
+
+# -----------------------------------------------------------------------------
+# Source assignment and effective date
+# -----------------------------------------------------------------------------
+if "day_mw" not in sources:
+    st.error(
+        "Daywise MW Report.xlsx is required. "
+        "Place the workbook in the configured database directory."
+    )
+    st.stop()
+
+
+dmw = sources["day_mw"]["data"]
+dq = sources.get("day_quality", {}).get("data")
+mmw = sources.get("month_mw", {}).get("data")
+mq = sources.get("month_quality", {}).get("data")
+plan = sources.get("plan", {}).get("data")
+
+if dmw is None or dmw.empty:
+    st.error("Daywise MW Report.xlsx did not contain valid mapped rows.")
+    st.stop()
+
+latest_mw = dmw["period"].max()
+latest_quality = (
+    dq["period"].max()
+    if dq is not None and not dq.empty
+    else None
 )
 
-fig_plan_monthly.update_traces(
-    textposition="outside",
-    hovertemplate="<b>Month:</b> %{x}<br><b>MW:</b> %{y:.2f}<extra></extra>"
+as_of = (
+    min(latest_mw, latest_quality)
+    if latest_quality is not None
+    else latest_mw
 )
 
-fig_plan_monthly = apply_chart_style(
-    fig_plan_monthly,
-    height=650
-)
+application_header(as_of)
 
-st.plotly_chart(
-    fig_plan_monthly,
-    use_container_width=True
-)
+if latest_quality is not None and latest_quality != latest_mw:
+    st.warning(
+        "Daily sources are not synchronized: "
+        f"MW latest {latest_mw:%d-%b-%Y}; "
+        f"quality latest {latest_quality:%d-%b-%Y}. "
+        f"Overview uses {as_of:%d-%b-%Y}."
+    )
 
-# --------------------------------------------------
-# Yield Trend
-# --------------------------------------------------
-st.markdown("---")
-st.subheader("Yield Trend")
 
-fig_yield = px.line(
-    filtered_daywise,
-    x="DATE",
-    y="A-GRADE YIELD(%)",
-    markers=True,
-    title="A Grade Yield Trend"
-)
+# -----------------------------------------------------------------------------
+# Overview
+# -----------------------------------------------------------------------------
+if page == "Overview":
+    effective_rows = dmw.loc[dmw["period"] == as_of]
+    if effective_rows.empty:
+        st.error("No Daywise MW row exists for the effective Overview date.")
+        st.stop()
 
-fig_yield.update_traces(
-    line=dict(width=4),
-    marker=dict(size=10),
-    hovertemplate="<b>Date:</b> %{x}<br><b>A Grade Yield:</b> %{y:.2f}%<extra></extra>"
-)
+    current_row = effective_rows.iloc[-1]
+    prior_row = previous_row(dmw, as_of)
 
-fig_yield = apply_chart_style(fig_yield, height=550)
+    month_start = as_of.replace(day=1)
+    financial_year_start = fy_start(as_of)
 
-st.plotly_chart(
-    fig_yield,
-    use_container_width=True
-)
+    mtd = dmw.loc[
+        (dmw["period"] >= month_start)
+        & (dmw["period"] <= as_of)
+    ].copy()
 
-# --------------------------------------------------
-# Rejection Trend
-# --------------------------------------------------
-st.markdown("---")
-st.subheader("Rejection Trend")
+    ytd = dmw.loc[
+        (dmw["period"] >= financial_year_start)
+        & (dmw["period"] <= as_of)
+    ].copy()
 
-fig_reject = px.line(
-    filtered_daywise,
-    x="DATE",
-    y="TOTAL REJECTION",
-    markers=True,
-    title="Total Rejection Trend"
-)
+    target = plan_for(plan, as_of)
+    mtd_actual = safe_sum(mtd, "total_mw")
+    production_days = max(mtd["period"].nunique(), 1)
+    run_rate = mtd_actual / production_days
 
-fig_reject = apply_chart_style(fig_reject, height=550)
+    days_in_month = pd.Period(as_of, freq="M").days_in_month
+    remaining_days = max(days_in_month - as_of.day, 1)
 
-st.plotly_chart(
-    fig_reject,
-    use_container_width=True
-)
+    required_rate = (
+        max(target - mtd_actual, 0) / remaining_days
+        if target is not None
+        else None
+    )
 
-# --------------------------------------------------
-# Breakage Pareto
-# --------------------------------------------------
-st.markdown("---")
-st.subheader("Breakage Pareto")
+    plan_achievement = (
+        mtd_actual / target * 100
+        if target not in (None, 0)
+        else None
+    )
 
-breakage_data = pd.DataFrame({
-    "Type": ["R-W", "B-W", "AL-W", "AG-W", "CELL"],
-    "Qty": [
-        filtered_daywise["R-W BREAKAGE"].sum(),
-        filtered_daywise["B-W BREAKAGE"].sum(),
-        filtered_daywise["AL-W BREAKAGE"].sum(),
-        filtered_daywise["AG-W BREAKAGE"].sum(),
-        filtered_daywise["CELL BREAKAGE"].sum()
+    remaining_plan_mw=max(target-mtd_actual,0) if target is not None else None
+    today_mw=current_row.get("total_mw",0); previous_mw=None if prior_row is None else prior_row.get("total_mw")
+    today_cells=current_row.get("total_cells",0); previous_cells=None if prior_row is None else prior_row.get("total_cells")
+    columns=st.columns(8)
+    card_values=[
+        (f"Today's Production ({as_of:%d-%b-%Y})",f"{today_mw:.3f} MW",delta(today_mw,previous_mw,"MW"),comparison_tone(today_mw,previous_mw)),
+        ("Today's Production — Cells",f"{today_cells:,.0f}",delta(today_cells,previous_cells,"Cells"),comparison_tone(today_cells,previous_cells)),
+        ("MTD Production",f"{mtd_actual:.3f} MW",f"{month_start:%d-%b-%Y} → {as_of:%d-%b-%Y}","neutral"),
+        ("FY YTD Production",f"{safe_sum(ytd,'total_mw'):.3f} MW",f"{financial_year_start:%d-%b-%Y} → {as_of:%d-%b-%Y}","neutral"),
+        ("A Grade MW",f"{current_row.get('a_mw',0):.3f} MW","Effective production date","neutral"),
+        ("Run Rate",f"{run_rate:.3f} MW/day",f"Required: {required_rate:.3f} MW/day" if required_rate is not None else "Required unavailable",comparison_tone(run_rate,required_rate)),
+        ("Required Rate",f"{required_rate:.3f} MW/day" if required_rate is not None else "N/A",f"Remaining target: {remaining_plan_mw:.3f} MW" if remaining_plan_mw is not None else "Plan unavailable","plan"),
+        ("Plan Achievement",f"{plan_achievement:.2f}%" if plan_achievement is not None else "N/A",f"Actual {mtd_actual:.3f} · Plan {target:.3f} · Remaining {remaining_plan_mw:.3f} MW" if target is not None else "Plan unavailable",achievement_tone(plan_achievement)),
     ]
-})
+    for column, values in zip(columns,card_values):
+        with column: kpi(*values)
 
-fig_breakage = px.bar(
-    breakage_data,
-    x="Qty",
-    y="Type",
-    orientation="h",
-    title="Breakage Pareto"
-)
+    trend_column, cells_column, mw_column = st.columns([1.5, 1, 1])
 
-fig_breakage = apply_chart_style(fig_breakage, height=550)
+    with trend_column:
+        st.subheader("Current-Month Production Trend")
+        plot(production(mtd))
 
-st.plotly_chart(
-    fig_breakage,
-    use_container_width=True
+    with cells_column:
+        st.subheader("Grade-wise Production — Cells")
+        plot(
+            donut(
+                mtd,
+                ["a_cells", "b_cells", "bel_cells", "eb_cells"],
+                ["A Grade", "B Grade", "B-EL Grade", "EB Grade"],
+                "Cells",
+            )
+        )
+
+    with mw_column:
+        st.subheader("Grade-wise Production — MW")
+        plot(
+            donut(
+                mtd,
+                ["a_mw", "b_mw", "bel_mw", "eb_mw"],
+                ["A Grade", "B Grade", "B-EL Grade", "EB Grade"],
+                "MW",
+            )
+        )
+
+    st.subheader("Run Rate vs Required Rate — Current Plan")
+    if target is not None:
+        run_data, required_series=overview_run_data(dmw,month_start,as_of,target)
+        plot(run_rate_chart(run_data,required_series,grain="day"))
+    else: empty(f"No plan target is available for {as_of:%b-%Y}.")
+
+    st.subheader("Source Data")
+    source_options = {
+        item["file"]: role
+        for role, item in sources.items()
+    }
+    selected_file = st.selectbox(
+        "Choose Excel file",
+        list(source_options),
+        key="overview_source_file",
+    )
+
+    raw_data = sources[source_options[selected_file]]["raw"].copy()
+    st.dataframe(
+        raw_data,
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.download_button(
+        "Download selected data as CSV",
+        data=raw_data.to_csv(index=False).encode("utf-8"),
+        file_name=f"{Path(selected_file).stem}.csv",
+        mime="text/csv",
+    )
+
+
+# -----------------------------------------------------------------------------
+# Production
+# -----------------------------------------------------------------------------
+elif page == "Production":
+    production_min=dmw["period"].min().date(); production_max=as_of.date()
+    start_date,end_date,view,valid_range=validated_date_range("production",production_min,production_max,max(production_min,(as_of-pd.Timedelta(days=29)).date()),production_max)
+    if not valid_range: st.stop()
+
+    mw_data = aggregate(
+        date_filter(dmw, start_date, end_date),
+        view,
+    )
+
+    quality_data = (
+        aggregate(
+            date_filter(dq, start_date, end_date),
+            view,
+        )
+        if dq is not None
+        else None
+    )
+
+    if mw_data is None or mw_data.empty:
+        st.warning("No production data is available for the selected range.")
+        st.stop()
+
+    production_column, yield_column = st.columns([1.5, 1])
+
+    with production_column:
+        st.subheader("Production Trend")
+        production_figure = production(mw_data)
+        displayed_ticks(production_figure, mw_data, view)
+        plot(production_figure)
+
+    with yield_column:
+        st.subheader("Yield Percentage Trend")
+
+        if quality_data is not None and not quality_data.empty:
+            yield_figure = lines(
+                quality_data,
+                [
+                    ("a_yield_pct", "A Grade Yield", COL["green"]),
+                    ("b_yield_pct", "B Grade Yield", COL["blue"]),
+                    ("bel_yield_pct", "B-EL Yield", COL["orange"]),
+                    ("eb_yield_pct", "EB Yield", COL["purple"]),
+                ],
+                "Yield (%)",
+                grain=view_grain(view),
+            )
+            displayed_ticks(yield_figure, quality_data, view)
+            plot(yield_figure)
+        else:
+            empty("Daywise Data.xlsx is required for yield charts.")
+
+    st.subheader("Run Rate vs Required Rate")
+    selected_run, selected_required=selected_run_data(dmw,mw_data,plan,view)
+    if selected_required.notna().any(): plot(run_rate_chart(selected_run,selected_required,grain=view_grain(view)))
+    else: empty("No matching Plan targets are available for the selected range.")
+
+    cells_column, mw_column = st.columns(2)
+
+    with cells_column:
+        st.subheader("Grade-wise Production — Cells")
+        plot(
+            donut(
+                mw_data,
+                ["a_cells", "b_cells", "bel_cells", "eb_cells"],
+                ["A Grade", "B Grade", "B-EL Grade", "EB Grade"],
+                "Cells",
+            )
+        )
+
+    with mw_column:
+        st.subheader("Grade-wise Production — MW")
+        plot(
+            donut(
+                mw_data,
+                ["a_mw", "b_mw", "bel_mw", "eb_mw"],
+                ["A Grade", "B Grade", "B-EL Grade", "EB Grade"],
+                "MW",
+            )
+        )
+
+
+# -----------------------------------------------------------------------------
+# Analytics
+# -----------------------------------------------------------------------------
+else:
+    analytics_source = (
+        dq
+        if dq is not None and not dq.empty
+        else mq
+    )
+
+    if analytics_source is None or analytics_source.empty:
+        st.info(
+            "Daywise Data.xlsx or Monthwise Report.xlsx "
+            "is required for Analytics."
+        )
+        st.stop()
+
+    source_grain_is_monthly = (
+        analytics_source["time_grain"].iloc[0] == "month"
+        if "time_grain" in analytics_source.columns
+        else False
+    )
+
+    analytics_min=analytics_source["period"].min().date(); analytics_max=analytics_source["period"].max().date()
+    analytics_views=("Monthly",) if source_grain_is_monthly else ("Daily","Weekly","Monthly")
+    start_date,end_date,view,valid_range=validated_date_range("analytics",analytics_min,analytics_max,max(analytics_min,(analytics_source["period"].max()-pd.Timedelta(days=60)).date()),analytics_max,analytics_views)
+    if not valid_range: st.stop()
+
+    analytics_data = aggregate(
+        date_filter(analytics_source, start_date, end_date),
+        view,
+    )
+
+    if analytics_data is None or analytics_data.empty:
+        st.warning("No analytics data is available for the selected range.")
+        st.stop()
+
+    yield_column, rejection_column = st.columns(2)
+
+    with yield_column:
+        st.subheader("Yield Trend (%)")
+        yield_figure = lines(
+            analytics_data,
+            [
+                ("a_yield_pct", "A Grade", COL["green"]),
+                ("b_yield_pct", "B Grade", COL["blue"]),
+                ("bel_yield_pct", "B-EL Grade", COL["orange"]),
+                ("eb_yield_pct", "EB Grade", COL["purple"]),
+            ],
+            "Yield (%)",
+            grain=view_grain(view),
+        )
+        displayed_ticks(yield_figure, analytics_data, view)
+        plot(yield_figure)
+
+    with rejection_column:
+        st.subheader("Rejection Trend (%)")
+        rejection_figure = lines(
+            analytics_data,
+            [
+                ("er_pct", "ER %", COL["gray"]),
+                ("for_pct", "FOR %", COL["blue"]),
+                ("breakage_pct", "Breakage %", COL["orange"]),
+            ],
+            "Rejection / Breakage (%)",
+            grain=view_grain(view),
+        )
+        displayed_ticks(rejection_figure, analytics_data, view)
+        plot(rejection_figure)
+
+    pareto_column, heatmap_column = st.columns(2)
+
+    with pareto_column:
+        st.subheader("Breakage Pareto")
+        plot(pareto(analytics_data))
+
+    with heatmap_column:
+        st.subheader("Rejection Heatmap")
+
+        if view == "Daily" and "total_rejection" in analytics_data.columns:
+            heatmap_data = analytics_data.copy()
+            heatmap_data["dow"] = (
+                heatmap_data["period"].dt.day_name().str[:3]
+            )
+            heatmap_data["week"] = (
+                heatmap_data["period"].dt.isocalendar().week
+            )
+
+            pivot = heatmap_data.pivot_table(
+                index="week",
+                columns="dow",
+                values="total_rejection",
+                aggfunc="sum",
+            ).reindex(
+                columns=["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+            )
+
+            heatmap = go.Figure(
+                go.Heatmap(
+                    z=pivot.values,
+                    x=pivot.columns,
+                    y=[f"Wk {week}" for week in pivot.index],
+                    text=np.round(pivot.values, 0),
+                    texttemplate="%{text:,.0f}",
+                    colorscale=[
+                        [0, "#16a05d"],
+                        [0.5, "#f4c542"],
+                        [1, "#d73838"],
+                    ],
+                    colorbar_title="Rejection (Cells)",
+                    hovertemplate=(
+                        "Day: %{x}<br>"
+                        "Week: %{y}<br>"
+                        "Rejection: %{z:,.0f} Cells"
+                        "<extra></extra>"
+                    ),
+                )
+            )
+
+            heatmap.update_layout(
+                height=380,
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="#dcecff"),
+                margin=dict(l=55, r=60, t=40, b=55),
+                xaxis_title="Day of Week",
+                yaxis_title="ISO Week",
+            )
+            plot(heatmap)
+        else:
+            empty(
+                "Select Daily view with rejection data "
+                "to display the weekday heatmap."
+            )
+
+
+st.caption(
+    "Plan values are used only for target comparisons. "
+    "All production values are Actuals from operational workbooks."
 )
