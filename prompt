@@ -1,0 +1,535 @@
+Generate production-ready Python code for a complete Streamlit application called:
+
+SOLAR CELL MANUFACTURING DASHBOARD
+
+The output must be a fully working Streamlit project.
+
+Requirements:
+
+- Use Streamlit
+- Use Plotly for all charts
+- Use Pandas
+- Use NumPy
+- Use custom CSS for dark theme
+- Modular and production-quality code
+- Include sample data generation functions
+- Separate reusable chart functions
+- Responsive layout
+- Wide mode layout
+
+========================================
+GENERAL DESIGN
+========================================
+
+Theme:
+
+- Dark manufacturing MES dashboard
+- Similar to modern factory dashboards
+- Navy background
+- Blue accents
+- KPI cards with gradients
+- Clean executive look
+
+Sidebar:
+
+- Overview
+- Production
+- Analytics
+
+Header:
+
+Title:
+
+SOLAR CELL MANUFACTURING DASHBOARD
+
+Subtitle:
+
+Final Product · Real-Time Production Monitoring
+
+Header controls:
+
+- FY selector
+- Refresh timestamp
+- Refresh button
+
+DO NOT ADD A FILTERS BUTTON.
+
+========================================
+OVERVIEW TAB
+========================================
+
+Overview is NOT date-range driven.
+
+Overview should always use:
+
+Latest Available Production Date
+
+Display:
+
+AS OF: DD-MMM-YYYY
+
+Example:
+
+AS OF: 15-May-2025
+
+All Overview KPIs and summaries must use this date.
+
+========================================
+OVERVIEW KPI CARDS
+========================================
+
+Today's Production
+
+Title format:
+
+TODAY'S PRODUCTION (15-May-2025)
+
+Value:
+
+5.23 MW
+
+Comparison format:
+
+▲ 12.65% vs Yesterday
+(4.64 MW, +0.59 MW)
+
+========================================
+
+MTD Production
+
+Title:
+
+MTD PRODUCTION
+
+Subtitle:
+
+01-May-2025 → 15-May-2025
+
+Value:
+
+125.80 MW
+
+Comparison:
+
+▲ 8.15%
+Previous MTD
+(+9.48 MW)
+
+========================================
+
+YTD Production
+
+Title:
+
+YTD PRODUCTION
+
+Subtitle:
+
+01-Apr-2025 → 15-May-2025
+
+Value:
+
+685.42 MW
+
+Comparison:
+
+▲ 15.62%
+Previous FY YTD
+(+92.46 MW)
+
+========================================
+
+Yield %
+
+Title:
+
+YIELD %
+
+Value:
+
+93.42%
+
+Comparison:
+
+▲ 1.25%
+vs Yesterday
+(92.27%, +1.15%)
+
+========================================
+
+Reject %
+
+Title:
+
+REJECT %
+
+Value:
+
+1.15%
+
+Comparison:
+
+▼ 0.32%
+vs Last Month
+(1.36%, -0.21%)
+
+========================================
+
+Run Rate
+
+Title:
+
+RUN RATE
+
+Value:
+
+4.95 MW/day
+
+Comparison:
+
+▲ 0.28 MW/day
+vs Required
+(4.67 MW/day)
+
+========================================
+
+Required Rate
+
+Value:
+
+4.62 MW/day
+
+========================================
+
+Plan Achievement
+
+Use a radial gauge.
+
+========================================
+OVERVIEW CHARTS
+========================================
+
+1. Grade Wise Production (Nos)
+
+Plotly Donut
+
+Grades:
+
+- A Grade
+- B Grade
+- B-EL Grade
+- EB Grade
+
+Show:
+
+- Percentage
+- Cell Count
+
+========================================
+
+2. Grade Wise Production (MW)
+
+Plotly Donut
+
+Show MW split.
+
+========================================
+
+3. BREAKAGE SPLIT
+
+Donut chart.
+
+Show:
+
+- MW
+- Cell Count
+
+Legend format:
+
+B-W Breakage
+0.95 MW
+1842 Cells
+
+========================================
+
+4. DAILY PRODUCTION TREND
+
+This chart is extremely important.
+
+Build it exactly like a manufacturing dashboard.
+
+Combination chart.
+
+Series:
+
+Bars:
+- Good Cells (Nos.)
+
+Lines:
+- Overall MW
+- A Grade MW
+
+Features:
+
+- Daily dates on x-axis
+- Value labels on bars
+- Value labels on line points
+- Hover tooltips
+- Blue/cyan bars
+- Green line for Overall MW
+- Blue line for A-Grade MW
+
+The chart style should resemble the uploaded Excel dashboard.
+
+Example:
+
+Good Cells (Nos)
+Overall MW
+A Grade MW
+
+for every day.
+
+Use dual Y axes if required.
+
+========================================
+
+5. DAILY EFFICIENCY TREND
+
+Line chart.
+
+Series:
+
+SAP Efficiency - Bin Loss
+
+Tester Efficiency (Halm)
+
+Features:
+
+- Point markers
+- Data labels
+- Daily dates
+- Values displayed
+
+Replicate the Excel-style trend chart.
+
+========================================
+
+6. RUN RATE vs REQUIRED RATE
+
+Line chart
+
+Run Rate
+
+Required Rate
+
+Show markers.
+
+========================================
+
+7. MTD SUMMARY
+
+Right-side panel.
+
+Rows:
+
+Total Production
+
+A Grade Production
+
+Total Rejection
+
+Total Breakage
+
+Yield %
+
+Plan Achievement
+
+========================================
+
+8. REJECTION TREND
+
+Replace the current stacked area chart.
+
+Build a manufacturing trend chart like the Excel screenshot.
+
+Series:
+
+FOR %
+
+ER %
+
+Breakage %
+
+Features:
+
+- Three trend lines
+- Daily percentages
+- Data labels on every point
+- Markers on points
+- Plotly line chart
+- Manufacturing SPC style
+- Distinct colors
+
+FOR % = blue
+
+ER % = black/gray
+
+Breakage % = orange
+
+Display actual percentage values above every point.
+
+========================================
+
+9. MONTHLY PERFORMANCE SUMMARY
+
+Data table
+
+Columns:
+
+Month
+Plan MW
+Actual MW
+Achv %
+A Grade MW
+A Grade %
+Yield %
+Reject %
+Breakage %
+Run Rate
+Required Rate
+Status
+
+Status should use colored dots.
+
+========================================
+PRODUCTION TAB
+========================================
+
+Production tab should have:
+
+Start Date
+End Date
+Apply Range
+
+View Selector
+
+Options:
+
+Daily
+Weekly
+Monthly
+
+========================================
+
+Production Charts
+
+Daily Production Trend
+
+Yield Trend
+
+Plan vs Actual
+
+Rejection Trend
+
+All charts respond to selected date range.
+
+========================================
+ANALYTICS TAB
+========================================
+
+Date range picker
+
+Apply button
+
+View selector
+
+Charts:
+
+Breakage Pareto
+
+Rejection Heatmap
+
+========================================
+
+BREAKAGE PARETO
+========================================
+
+Horizontal bars
+
+Show:
+
+MW
+
+Percentage
+
+Sort descending.
+
+========================================
+
+REJECTION HEATMAP
+========================================
+
+Days:
+
+Mon-Sun
+
+Weeks:
+
+Wk15-Wk19
+
+Green = Low
+
+Yellow = Medium
+
+Red = High
+
+========================================
+DATA MODEL
+========================================
+
+Generate realistic sample manufacturing data:
+
+Cell Counts
+
+MW
+
+Yield
+
+Reject
+
+Breakage
+
+Run Rate
+
+Plan
+
+A Grade %
+
+Financial Year:
+
+Apr → Mar
+
+Latest production date:
+
+15-May-2025
+
+========================================
+CODE REQUIREMENTS
+========================================
+
+Provide:
+
+1. Complete Streamlit code
+2. Imports
+3. CSS styling
+4. Data generation
+5. Chart functions
+6. KPI card helper
+7. Sidebar
+8. Header
+9. Tabs
+10. Plotly charts
+11. Page configuration
+12. Comments explaining architecture
+
+Output only runnable Python code.
