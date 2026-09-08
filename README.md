@@ -44,10 +44,18 @@ npm.cmd install
 npm.cmd run dev
 ```
 $NodeFolder = "C:\Users\vijaya.kalyani\Downloads\renew-solar-dashboard-v2\node-v24.20.0-win-x64"
-$env:Path = "$NodeFolder;$env:Path"
+C:\Users\amit.kumar6\Downloads\Dashboard
 
 cd "C:\Users\vijaya.kalyani\Downloads\renew-solar-dashboard-v2\frontend"
+node.exe --version
+npm.cmd --version
+npm.cmd install
+npm.cmd run dev
 
+
+$NodeFolder = "C:\Users\amit.kumar6\Downloads\Dashboard\node-v24.20.0-win-x64"
+$env:Path = "$NodeFolder;$env:Path"
+cd "C:\Users\amit.kumar6\Downloads\Dashboard\frontend"
 node.exe --version
 npm.cmd --version
 npm.cmd install
