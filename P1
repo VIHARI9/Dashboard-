@@ -1,0 +1,259 @@
+Here's a copy-ready prompt containing only the changes you requested, without repeating the entire UI redesign.
+
+### Microsoft Copilot Agent – Dashboard Enhancement Prompt
+
+Do not redesign the existing UI. Keep the approved Light and Dark mode designs exactly as they are. Only implement the following functional and UI enhancements while preserving all existing SAP integration, API calls, calculations, and business logic.
+
+### 1\. Add a Date Range Filter to the Overview Tab
+
+Add a professional enterprise-style Date Range Filter for the Overview tab.
+
+This filter must update all KPI tiles and both tables instantly without reloading the page.
+
+The filter must support:
+
+* Custom Date Range
+
+* Quarter Selection (Financial Year starts in April)
+
+    * Q1 → Apr–Jun
+
+    * Q2 → Jul–Sep
+
+    * Q3 → Oct–Dec
+
+    * Q4 → Jan–Mar
+
+* Individual Month Selection (Apr–Mar)
+
+The selected date range must affect:
+
+* On-Date Production
+
+* Production Till Date
+
+* YTD Production
+
+* Run Rate
+
+* Plan Achievement
+
+* Production Distribution table
+
+* Yield Distribution table
+
+### 2\. Replace MTD KPI with "Production Till Date"
+
+Remove the MTD KPI completely.
+
+Replace it with:
+
+> Production Till Date
+
+This KPI must compare:
+
+* Actual cumulative production till the selected date
+
+* Expected cumulative production till the selected date
+
+Example:
+
+* Monthly Target = 172 MW
+
+* September = 30 days
+
+* Daily Target = 172 ÷ 30 = 5.73 MW
+
+* Selected Date = 11 Sep
+
+* Expected Till Date = 5.73 × 11 = 63.06 MW
+
+The card should display:
+
+* Actual
+
+* Plan Till Date
+
+* Gap
+
+* Achievement %
+
+* Dynamic Progress Bar
+
+* Real Trend Sparkline
+
+### 3\. Change YTD KPI to GW
+
+The YTD KPI should display values in GW instead of MW.
+
+Example:
+
+* 651.71 MW → 0.652 GW
+
+Format intelligently while keeping calculations correct.
+
+### 4\. Replace Decorative KPI Sparklines with Real Trend Curves
+
+The small graph at the bottom of every KPI card must use actual historical data, not decorative waves.
+
+Examples:
+
+| KPI                  | Sparkline Source            |
+| -------------------- | --------------------------- |
+| On-Date              | Daily Production Trend      |
+| Production Till Date | Cumulative Production Trend |
+| YTD                  | YTD Trend                   |
+| Run Rate             | Run Rate Trend              |
+| Plan Achievement     | Achievement Trend           |
+
+These sparklines should animate smoothly when data changes.
+
+### 5\. Enhance Production Distribution Table
+
+Redesign the Production Distribution table.
+
+Instead of showing only MW for each period, split every period into Cells and MW.
+
+New structure:
+
+| Grade | On Date Cells | On Date MW | Till Date Cells | Till Date MW | YTD Cells | YTD MW |
+
+Use grouped headers.
+
+### Add Good Cells Row
+
+Insert a row immediately below EB.
+
+* Name: Good Cells
+
+* Calculate automatically.
+
+* Use the same green styling used in the Yield table.
+
+### Add Bad Cells Row
+
+Insert a row at the bottom.
+
+Formula:
+
+> Bad Cells = ER + OR + Breakage
+
+Display:
+
+* Cell Count
+
+* MW
+
+Use the same pale coral styling used for rejection rows.
+
+### 6\. Use `targets.xlsx` for Targets
+
+A new file exists:
+
+`backend/data/targets.xlsx`
+
+Analyze this file completely.
+
+Use it as the single source of truth for:
+
+* Daily Targets
+
+* Monthly Targets
+
+* Quarterly Targets
+
+* Financial Year Targets
+
+* Yield Targets
+
+* Wafer Loss Targets
+
+* Breakage Targets
+
+Do not hardcode target values.
+
+Expose them through the existing backend service if necessary.
+
+### 7\. Daily Target Line on Trend Charts
+
+Add a daily target series to every applicable trend chart.
+
+This is not a single overall target line.
+
+Example:
+
+If September's production target is 2 MW/day, generate:
+
+| Date   | Target |
+| ------ | ------ |
+| Sep 1  | 2      |
+| Sep 2  | 2      |
+| Sep 3  | 2      |
+| ...    | ...    |
+| Sep 30 | 2      |
+
+Plot this as a grey dashed line across the same X-axis as the actual production.
+
+Style:
+
+* Grey dashed line
+
+* 2.5px stroke
+
+* No fill
+
+* Label "Target"
+
+Apply the same concept wherever daily targets exist:
+
+* Daywise Production Trend
+
+* Daywise Rejection Trend
+
+* Yield Trend
+
+* Wafer Loss Trend
+
+The target series must regenerate automatically when the user changes:
+
+* Date Range
+
+* Month
+
+* Quarter
+
+### 8\. Fix Breakage Chart Tooltip
+
+The Breakage chart currently shows:
+
+> Invalid Date
+
+Fix this completely.
+
+Tooltips should display properly formatted dates like:
+
+* 11 Sep
+
+* 24 Jul
+
+* 02 Oct
+
+### 9\. Production Trend Tooltip Order
+
+When hovering over the Daywise Production Trend, display values in this exact order:
+
+* Overall MW
+
+* A Grade MW
+
+* Total Saleable Cells
+
+* Target MW (if displayed)
+
+Keep the tooltip styled consistently with the existing Light and Dark themes.
+
+### Final Requirement
+
+Do not regenerate the application from scratch.
+
+Scan the existing project first, preserve every API call, React hook, state variable, chart dataset, and business calculation, and update only the necessary frontend files and backend target-service logic so these enhancements work seamlessly with the existing dashboard.
